@@ -73,5 +73,32 @@
     "performance": ["currentNetWorth", "currentValue", "currentValueInBaseCurrency", "netPerformance", "netPerformancePercentage", "netPerformancePercentageWithCurrencyEffect", "netPerformanceWithCurrencyEffect", "totalFees", "totalInvestment", "totalLiabilities", "totalValueables"],
     "holding": ["symbol", "quantity", "investment", "averagePrice", "marketPrice", "netPerformance", "netPerformancePercent", "netPerformancePercentage", "grossPerformance", "grossPerformancePercentage", "dividend", "fee", "currency", "valueInBaseCurrency"],
     "report_categories": ["accounts", "currencies", "fees"]
+  },
+  "field_names": {
+    "up": "unitPrice",
+    "np": "netPerformance",
+    "npp": "netPerformancePercentage",
+    "nppce": "netPerformancePercentageWithCurrencyEffect",
+    "npce": "netPerformanceWithCurrencyEffect",
+    "npi": "netPerformanceInPercentage",
+    "npice": "netPerformanceInPercentageWithCurrencyEffect",
+    "gp": "grossPerformance",
+    "gpp": "grossPerformancePercentage",
+    "ti": "totalInvestment",
+    "tf": "totalFees",
+    "tl": "totalLiabilities",
+    "tv": "totalValueables",
+    "cv": "currentValue",
+    "cnw": "currentNetWorth",
+    "cvbc": "currentValueInBaseCurrency",
+    "mp": "marketPrice",
+    "ap": "averagePrice",
+    "nppct": "netPerformancePercent",
+    "div": "dividend",
+    "inv": "investment",
+    "vibc": "valueInBaseCurrency",
+    "ivce": "investmentValueWithCurrencyEffect",
+    "nw": "netWorth",
+    "upm": "unitPriceFromMarketData"
   }
 }

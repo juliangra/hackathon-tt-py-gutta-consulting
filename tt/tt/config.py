@@ -73,6 +73,10 @@ class TranslationConfig:
         """Get an output field list by key."""
         return self.output_fields.get(key, [])
 
+    def f(self, short_key: str) -> str:
+        """Get an API field name from its short key."""
+        return self._data.get("field_names", {}).get(short_key, short_key)
+
     @staticmethod
     def _camel_to_snake(name: str) -> str:
         result = []
