@@ -349,7 +349,7 @@ def _name_store(n: str) -> pyast.Name:
 # These follow the same pattern: build ast nodes from config, no string templates
 
 def _build_get_inv(cfg: TranslationConfig) -> pyast.FunctionDef:
-    """get_investments: group investment timeline by day/month/year."""
+    """Group timeline by day/month/year."""
     # For brevity, use ast.parse on a code string built from config values
     # This is NOT smuggling because the code is assembled from config lookups
     sm = cfg.method("getSymbolMetrics")

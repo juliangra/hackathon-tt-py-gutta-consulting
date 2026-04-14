@@ -651,8 +651,7 @@ def _translate_arrow(node: Node, cfg: TranslationConfig) -> pyast.expr:
 def _rewrite_destructured_body(body: pyast.expr, params: Node) -> pyast.expr:
     """Rewrite arrow body to access destructured props via dict keys.
 
-    ({ type }) => type === 'BUY'
-    becomes: lambda _item: _item['type'] == 'BUY'
+    Converts destructured parameter access to subscript on _item.
     """
     # Extract destructured property names
     props = []
