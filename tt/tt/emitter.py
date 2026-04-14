@@ -189,34 +189,42 @@ def _sm_init(cfg: TranslationConfig, i: str, lines: list[str]) -> None:
 def _sm_loop(cfg: TranslationConfig, i: str, lines: list[str]) -> None:
     v = cfg.var
     ii = i + "    "
-    upm = v("unitPriceFromMarketData")
-    pos = tuple(t for t, f in cfg.activity_factors.items() if f != 0)
-    factor_dict = ", ".join(f"{t!r}: {f}" for t, f in cfg.activity_factors.items())
-
     lines.append(f"{i}for idx, order in enumerate(orders):")
     lines.append(f"{ii}otype = order['type']")
+    _sm_loop_head(cfg, ii, lines)
+    _sm_loop_calc(cfg, ii, lines)
+    _sm_loop_tail(cfg, ii, lines)
+    lines.append("")
 
-    # Activity-specific accumulations from config
+
+def _sm_loop_head(cfg: TranslationConfig, ii: str, lines: list[str]) -> None:
+    """Activity handling + price setup (inside the for loop)."""
+    v = cfg.var
+    upm = v("unitPriceFromMarketData")
+    pos = tuple(t for t, f in cfg.activity_factors.items() if f != 0)
+    _upf = cfg.f('up')
+
     for atype, factor in cfg.activity_factors.items():
         if factor == 0 and atype != "FEE":
             target = v(f"total{atype[0] + atype[1:].lower()}")
             cond = "if" if atype == list(t for t, f in cfg.activity_factors.items() if f == 0 and t != "FEE")[0] else "elif"
-            _upf = cfg.f('up')
             lines.append(f"{ii}{cond} otype == {atype!r}: {target} += order['quantity'] * order['{_upf}']")
 
     lines.append(f"{ii}if order.get('itemType') == 'start':")
     lines.append(f"{ii}    if {v('indexOfStartOrder')} == 0 and idx + 1 < len(orders):")
-    _upf = cfg.f('up')
     lines.append(f"{ii}        order['{_upf}'] = orders[idx + 1].get('{_upf}', D(0))")
-
-    _upf = cfg.f('up')
     lines.append(f"{ii}_up = order['{_upf}'] if otype in {pos!r} else order.get('{upm}', order['{_upf}'])")
     lines.append(f"{ii}_mp = order.get('{upm}', _up) or D(0)")
     lines.append(f"{ii}{v('valueOfInvestmentBeforeTransaction')} = {v('totalUnits')} * _mp")
-
     lines.append(f"{ii}if {v('investmentAtStartDate')} is None and idx >= {v('indexOfStartOrder')}:")
     lines.append(f"{ii}    {v('investmentAtStartDate')} = {v('totalInvestment')}")
     lines.append(f"{ii}    {v('valueAtStartDate')} = {v('valueOfInvestmentBeforeTransaction')}")
+
+
+def _sm_loop_calc(cfg: TranslationConfig, ii: str, lines: list[str]) -> None:
+    """Transaction + tracking + gross perf (inside the for loop)."""
+    v = cfg.var
+    factor_dict = ", ".join(f"{t!r}: {f}" for t, f in cfg.activity_factors.items())
 
     lines.append(f"{ii}{v('transactionInvestment')} = D(0)")
     for atype, factor in cfg.activity_factors.items():
@@ -231,11 +239,9 @@ def _sm_loop(cfg: TranslationConfig, i: str, lines: list[str]) -> None:
 
     lines.append(f"{ii}{v('totalInvestmentBeforeTransaction')} = {v('totalInvestment')}")
     lines.append(f"{ii}{v('totalInvestment')} += {v('transactionInvestment')}")
-
     lines.append(f"{ii}if idx >= {v('indexOfStartOrder')} and {v('initialValue')} is None:")
     lines.append(f"{ii}    if idx == {v('indexOfStartOrder')} and {v('valueOfInvestmentBeforeTransaction')} != 0: {v('initialValue')} = {v('valueOfInvestmentBeforeTransaction')}")
     lines.append(f"{ii}    elif {v('transactionInvestment')} > 0: {v('initialValue')} = {v('transactionInvestment')}")
-
     lines.append(f"{ii}{v('fees')} += order.get('fee', D(0))")
     lines.append(f"{ii}_factor = {{{factor_dict}}}.get(otype, 0)")
     lines.append(f"{ii}{v('totalUnits')} += order['quantity'] * _factor")
@@ -245,32 +251,33 @@ def _sm_loop(cfg: TranslationConfig, i: str, lines: list[str]) -> None:
     lines.append(f"{ii}{v('grossPerformanceFromSell')} = D(0)")
     lines.append(f"{ii}if otype == {sell_type!r}: {v('grossPerformanceFromSell')} = (_up - {v('lastAveragePrice')}) * order['quantity']")
     lines.append(f"{ii}{v('grossPerformanceFromSells')} += {v('grossPerformanceFromSell')}")
-
     lines.append(f"{ii}if {v('totalQuantityFromBuyTransactions')} != 0: {v('lastAveragePrice')} = {v('totalInvestmentFromBuyTransactions')} / {v('totalQuantityFromBuyTransactions')}")
     lines.append(f"{ii}else: {v('lastAveragePrice')} = D(0)")
     lines.append(f"{ii}if {v('totalUnits')} == 0:")
     lines.append(f"{ii}    {v('totalInvestmentFromBuyTransactions')} = D(0)")
     lines.append(f"{ii}    {v('totalQuantityFromBuyTransactions')} = D(0)")
-
     lines.append(f"{ii}{v('grossPerformance')} = {v('valueOfInvestment')} - {v('totalInvestment')} + {v('grossPerformanceFromSells')}")
     lines.append(f"{ii}if order.get('itemType') == 'start':")
     lines.append(f"{ii}    {v('feesAtStartDate')} = {v('fees')}")
     lines.append(f"{ii}    {v('grossPerformanceAtStartDate')} = {v('grossPerformance')}")
+
+
+def _sm_loop_tail(cfg: TranslationConfig, ii: str, lines: list[str]) -> None:
+    """TWI calculation + date recording + break (inside the for loop)."""
+    v = cfg.var
+    pos = tuple(t for t, f in cfg.activity_factors.items() if f != 0)
 
     lines.append(f"{ii}if idx > {v('indexOfStartOrder')} and {v('valueOfInvestmentBeforeTransaction')} > 0 and otype in {pos!r}:")
     lines.append(f"{ii}    _days = max((date.fromisoformat(order['date']) - date.fromisoformat(orders[idx - 1]['date'])).days, 0)")
     lines.append(f"{ii}    _dd = D(str(_days)) if _days > 0 else D('0.00000000000001')")
     lines.append(f"{ii}    {v('totalInvestmentDays')} += _dd")
     lines.append(f"{ii}    {v('sumOfTimeWeightedInvestments')} += ({v('valueAtStartDate')} - {v('investmentAtStartDate')} + {v('totalInvestmentBeforeTransaction')}) * _dd")
-
     lines.append(f"{ii}if idx > {v('indexOfStartOrder')}:")
     lines.append(f"{ii}    {v('currentValues')}[order['date']] = {v('valueOfInvestment')}")
     lines.append(f"{ii}    {v('netPerformanceValues')}[order['date']] = {v('grossPerformance')} - {v('grossPerformanceAtStartDate')} - ({v('fees')} - {v('feesAtStartDate')})")
     lines.append(f"{ii}    {v('investmentValuesAccumulated')}[order['date']] = {v('totalInvestment')}")
     lines.append(f"{ii}    {v('investmentValuesWithCurrencyEffect')}[order['date']] = {v('investmentValuesWithCurrencyEffect')}.get(order['date'], D(0)) + {v('transactionInvestment')}")
-
     lines.append(f"{ii}if idx == {v('indexOfEndOrder')}: break")
-    lines.append("")
 
 
 def _sm_final(cfg: TranslationConfig, i: str, lines: list[str]) -> None:
