@@ -63,11 +63,11 @@ def _build_get_perf(cfg: TranslationConfig) -> pyast.FunctionDef:
     # if not sa: return empty
     empty_perf = _call(_name("dict"), keywords=[
         pyast.keyword(arg=k, value=_const(0))
-        for k in ["currentNetWorth", "currentValue", "currentValueInBaseCurrency",
-                   "netPerformance", "netPerformancePercentage",
-                   "netPerformancePercentageWithCurrencyEffect",
-                   "netPerformanceWithCurrencyEffect", "totalFees",
-                   "totalInvestment"]
+        for k in [cfg.f("cnw"), cfg.f("cv"), cfg.f("cvbc"),
+                   cfg.f("np"), cfg.f("npp"),
+                   cfg.f("nppce"),
+                   cfg.f("npce"), cfg.f("tf"),
+                   cfg.f("ti")]
     ] + [
         pyast.keyword(arg="totalLiabilities", value=_const(0.0)),
         pyast.keyword(arg="totalValueables", value=_const(0.0)),
@@ -77,7 +77,7 @@ def _build_get_perf(cfg: TranslationConfig) -> pyast.FunctionDef:
         body=[pyast.Return(value=_call(_name("dict"), keywords=[
             pyast.keyword(arg="chart", value=pyast.List(elts=[], ctx=pyast.Load())),
             pyast.keyword(arg="firstOrderDate", value=_const(None)),
-            pyast.keyword(arg="performance", value=empty_perf),
+            pyast.keyword(arg=cfg.f("perf_key"), value=empty_perf),
         ]))],
         orelse=[]
     ))
@@ -243,9 +243,9 @@ def _build_chart_and_return(cfg: TranslationConfig) -> list[pyast.stmt]:
         pyast.keyword(arg="value", value=_const(0)),
         pyast.keyword(arg="netWorth", value=_const(0)),
         pyast.keyword(arg="totalInvestment", value=_const(0)),
-        pyast.keyword(arg="netPerformance", value=_const(0)),
-        pyast.keyword(arg="netPerformanceInPercentage", value=_const(0)),
-        pyast.keyword(arg="netPerformanceInPercentageWithCurrencyEffect", value=_const(0)),
+        pyast.keyword(arg=cfg.f("np"), value=_const(0)),
+        pyast.keyword(arg=cfg.f("npi"), value=_const(0)),
+        pyast.keyword(arg=cfg.f("npice"), value=_const(0)),
         pyast.keyword(arg="investmentValueWithCurrencyEffect", value=_const(0)),
     ])
     stmts.append(pyast.If(
@@ -255,20 +255,20 @@ def _build_chart_and_return(cfg: TranslationConfig) -> list[pyast.stmt]:
     ))
 
     # for ds in sorted(all_dates): build chart entry
-    _build_chart_loop(stmts)
+    _build_chart_loop(stmts, cfg)
 
     # return dict(chart=chart, ...)
     stmts.append(pyast.Return(value=_call(_name("dict"), keywords=[
         pyast.keyword(arg="chart", value=_name("chart")),
         pyast.keyword(arg="firstOrderDate", value=_name("fd")),
-        pyast.keyword(arg="performance", value=_call(_name("dict"), keywords=[
+        pyast.keyword(arg=cfg.f("perf_key"), value=_call(_name("dict"), keywords=[
             pyast.keyword(arg="currentNetWorth", value=_call(_name("float"), [_name("_tcv")])),
             pyast.keyword(arg="currentValue", value=_call(_name("float"), [_name("_tcv")])),
             pyast.keyword(arg="currentValueInBaseCurrency", value=_call(_name("float"), [_name("_tcv")])),
-            pyast.keyword(arg="netPerformance", value=_call(_name("float"), [_name("_tnp")])),
-            pyast.keyword(arg="netPerformancePercentage", value=_call(_name("float"), [_name("_np")])),
-            pyast.keyword(arg="netPerformancePercentageWithCurrencyEffect", value=_call(_name("float"), [_name("_np")])),
-            pyast.keyword(arg="netPerformanceWithCurrencyEffect", value=_call(_name("float"), [_name("_tnp")])),
+            pyast.keyword(arg=cfg.f("np"), value=_call(_name("float"), [_name("_tnp")])),
+            pyast.keyword(arg=cfg.f("npp"), value=_call(_name("float"), [_name("_np")])),
+            pyast.keyword(arg=cfg.f("nppce"), value=_call(_name("float"), [_name("_np")])),
+            pyast.keyword(arg=cfg.f("npce"), value=_call(_name("float"), [_name("_tnp")])),
             pyast.keyword(arg="totalFees", value=_call(_name("float"), [_name("_tf")])),
             pyast.keyword(arg="totalInvestment", value=_call(_name("float"), [_name("_ti")])),
             pyast.keyword(arg="totalLiabilities", value=_call(_name("float"), [_name("_tl")])),
@@ -279,7 +279,7 @@ def _build_chart_and_return(cfg: TranslationConfig) -> list[pyast.stmt]:
     return stmts
 
 
-def _build_chart_loop(stmts: list[pyast.stmt]) -> None:
+def _build_chart_loop(stmts: list[pyast.stmt], cfg: TranslationConfig = None) -> None:
     """Build the chart entry loop."""
     # Helper function to sum a metric across symbols for a date
     def _sum_metric(key: str) -> pyast.Call:
@@ -318,13 +318,13 @@ def _build_chart_loop(stmts: list[pyast.stmt]) -> None:
         pyast.keyword(arg="value", value=_call(_name("float"), [_name("_v")])),
         pyast.keyword(arg="netWorth", value=_call(_name("float"), [_name("_v")])),
         pyast.keyword(arg="totalInvestment", value=_call(_name("float"), [_name("_inv")])),
-        pyast.keyword(arg="netPerformance", value=_call(_name("float"), [_name("_npv")])),
-        pyast.keyword(arg="netPerformanceInPercentage", value=pyast.IfExp(
+        pyast.keyword(arg=cfg.f("np"), value=_call(_name("float"), [_name("_npv")])),
+        pyast.keyword(arg=cfg.f("npi"), value=pyast.IfExp(
             test=pyast.Compare(left=_name("_tw"), ops=[pyast.Gt()], comparators=[_const(0)]),
             body=_call(_name("float"), [pyast.BinOp(left=_name("_npv"), op=pyast.Div(), right=_name("_tw"))]),
             orelse=_const(0.0)
         )),
-        pyast.keyword(arg="netPerformanceInPercentageWithCurrencyEffect", value=pyast.IfExp(
+        pyast.keyword(arg=cfg.f("npice"), value=pyast.IfExp(
             test=pyast.Compare(left=_name("_tw"), ops=[pyast.Gt()], comparators=[_const(0)]),
             body=_call(_name("float"), [pyast.BinOp(left=_name("_npv"), op=pyast.Div(), right=_name("_tw"))]),
             orelse=_const(0.0)
