@@ -99,6 +99,7 @@
     "vibc": "valueInBaseCurrency",
     "ivce": "investmentValueWithCurrencyEffect",
     "nw": "netWorth",
-    "upm": "unitPriceFromMarketData"
+    "upm": "unitPriceFromMarketData",
+    "perf_key": "performance"
   }
 }

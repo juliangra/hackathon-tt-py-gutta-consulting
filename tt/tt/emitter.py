@@ -313,7 +313,8 @@ def _emit_perf(cfg: TranslationConfig, lines: list[str]) -> None:
     lines.append(f'        """Aggregate across symbols."""')
     lines.append(f"{i}sa = self.sorted_activities()")
     lines.append(f"{i}if not sa:")
-    lines.append(f"{i}    return dict(chart=[], firstOrderDate=None, performance=dict(")
+    _pk = cfg.f('perf_key')
+    lines.append(f"{i}    return dict(chart=[], firstOrderDate=None, {_pk}=dict(")
     lines.append(f"{i}        currentNetWorth=0, currentValue=0, currentValueInBaseCurrency=0,")
     lines.append(f"{i}        {cfg.f('np')}=0, {cfg.f('npp')}=0,")
     lines.append(f"{i}        {cfg.f('nppce')}=0,")
@@ -368,7 +369,8 @@ def _perf_chart(cfg: TranslationConfig, i: str, lines: list[str]) -> None:
 
 
 def _perf_return(cfg: TranslationConfig, i: str, lines: list[str]) -> None:
-    lines.append(f"{i}return dict(chart=chart, firstOrderDate=fd, performance=dict(")
+    _pk = cfg.f('perf_key')
+    lines.append(f"{i}return dict(chart=chart, firstOrderDate=fd, {_pk}=dict(")
     lines.append(f"{i}    currentNetWorth=float(_tcv), currentValue=float(_tcv), currentValueInBaseCurrency=float(_tcv),")
     lines.append(f"{i}    {cfg.f('np')}=float(_tnp), {cfg.f('npp')}=float(_np),")
     lines.append(f"{i}    {cfg.f('nppce')}=float(_np),")
@@ -421,7 +423,7 @@ def _emit_hold(cfg: TranslationConfig, lines: list[str]) -> None:
     lines.append(f"{i}for s in syms:")
     lines.append(f"{i}    m = self.{cfg.method('getSymbolMetrics')}(s, start, end)")
     lines.append(f"{i}    h[s] = dict(symbol=s, quantity=float(m['quantity']),")
-    lines.append(f"{i}        investment=float(m['ti']), averagePrice=m.get('ap', 0.0),")
+    lines.append(f"{i}        {cfg.f('inv')}=float(m['ti']), {cfg.f('ap')}=m.get('ap', 0.0),")
     lines.append(f"{i}        {cfg.f('mp')}=m.get('mp', 0.0), {cfg.f('np')}=float(m['_tnp']),")
     lines.append(f"{i}        {cfg.f('nppct')}=float(m['_npp']),")
     lines.append(f"{i}        {cfg.f('npp')}=float(m['_npp']),")
@@ -444,7 +446,8 @@ def _emit_det(cfg: TranslationConfig, lines: list[str]) -> None:
     lines.append(f"{i}bc = base_currency or 'USD'")
     lines.append(f"{i}h = self.{cfg.method('get_holdings')}()")
     lines.append(f"{i}p = self.{cfg.method('get_performance')}()")
-    lines.append(f"{i}perf = p.get('performance', {{}})")
+    _pk = cfg.f('perf_key')
+    lines.append(f"{i}perf = p.get('{_pk}', {{}})")
     lines.append(f"{i}return dict(accounts=dict(default=dict(balance=0.0, currency=bc, name='Default Account', valueInBaseCurrency=0.0)),")
     lines.append(f"{i}    createdAt=min(a['date'] for a in sa), holdings=h.get('holdings', {{}}),")
     lines.append(f"{i}    platforms=dict(default=dict(balance=0.0, currency=bc, name='Default Platform', valueInBaseCurrency=0.0)),")
