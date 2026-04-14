@@ -11,7 +11,7 @@ Inspired by [karpathy/autoresearch](https://github.com/karpathy/autoresearch): a
 | `val_bpb` (single metric, lower is better) | **Test fail count** (lower is better) |
 | `program.md` (human-written agent protocol) | Our `PROGRAM.md` (agent research protocol) |
 | 5-min wall-clock budget | Full translate+test cycle (~30-60 seconds) |
-| `results.tsv` (experiment ledger) | `results.tsv` (same format) |
+| `results.csv` (experiment ledger) | `results.csv` (same format) |
 | Git ratchet (commit on improve, reset on regress) | Same |
 | ~12 experiments/hour | ~60-120 experiments/hour (cycles are faster) |
 
@@ -40,33 +40,38 @@ This mirrors autoresearch exactly: `program.md` / `train.py` / `prepare.py`.
 ```
 1. READ STATE
    - Current test results (which pass, which fail)
-   - results.tsv (what was tried, what worked)
+   - results.csv (what was tried, what worked)
+   - Rule violation count (make detect_rule_breaches)
    - Git log (what code changes have stuck)
 
-2. ANALYZE FAILURES
-   - Pick the highest-leverage failing test
-   - Read the test assertion to understand what value is expected
-   - Trace back to the TS source code path
-   - Identify which transform is missing or broken
+2. ANALYZE (depends on phase)
+   Phase 1: Pick highest-leverage failing test, trace to TS code
+   Phase 2: Pick highest-leverage rule violation, read the check script
+   Phase 3: Pick lowest quality sub-score, identify generated code to improve
 
 3. MUTATE
-   - Edit one transform file in tt/tt/
+   - Edit one file in tt/tt/
    - git commit (tentative)
 
 4. EVALUATE
-   - make translate-and-test-ghostfolio_pytx
-   - Extract: pass_count, fail_count, new_passes,
-     new_failures, duration
+   - python scripts/evaluate.py "description"      (always: tests)
+   - make detect_rule_breaches 2>&1 | tail -5       (Phase 2+: rules)
+   - make scoring_codequality                        (Phase 3: quality)
 
-5. DECIDE
-   - pass_count > previous_best:       KEEP (advance branch)
-   - pass_count == best, no regressions,
-     code is simpler:                   KEEP
-   - pass_count <= best OR regressions: DISCARD (git reset)
+5. DECIDE (composite)
+   Phase 1: pass_count improved, no regressions           -> KEEP
+   Phase 2: rule_violations decreased, tests still 135    -> KEEP
+   Phase 3: quality improved, still legal, tests still 135 -> KEEP
+   Any test regression                                    -> DISCARD
 
-6. LOG to results.tsv
+6. LOG to results.csv
+   - python scripts/mark.py keep|discard
 
-7. LOOP (never stop, never ask human)
+7. PUBLISH (when significant improvement)
+   - make publish_results
+   - python scripts/leaderboard.py --us
+
+8. LOOP (never stop, never ask human)
 ```
 
 ## Informed Hill-Climbing (Not Blind Search)
@@ -86,15 +91,58 @@ Got:      netWorth == 0
 
 This turns random search into directed graph traversal. Each failing test is a signpost pointing to the missing transform.
 
-## The Metrics
+## The Metrics (Multi-Objective)
+
+The loop optimizes a composite score, not just test count. Once tests are maxed, the focus shifts to rule compliance and code quality.
 
 ```
-Primary:    pass_count   (higher is better, this IS the competition score)
-Secondary:  fail_count   (should decrease monotonically on keeps)
-Diagnostic: new_passes   (tests flipped green this experiment)
-            new_failures (regressions, must be 0 on keeps)
-            duration     (translate+test cycle time)
-            code_quality (pyscn score, run less frequently)
+PRIMARY METRICS (check every experiment):
+  pass_count       Tests passing (higher is better, 85% of competition score)
+  fail_count       Tests failing (should decrease monotonically)
+  rule_violations  Count of failing rule checks (lower is better, 0 = legal)
+
+SECONDARY METRICS (check every ~5 experiments):
+  quality_pct      pyscn code quality score (15% of competition score)
+  overall_score    Combined: 50% tests + 50% quality (Supabase leaderboard formula)
+  legal            Boolean: all rule checks pass?
+
+DIAGNOSTIC:
+  new_passes       Tests flipped green this experiment
+  new_failures     Regressions (must be 0 on keeps)
+  duration         Translate+test cycle time
+```
+
+### Phase transitions
+
+The loop automatically shifts focus based on current state:
+
+```
+Phase 1 (pass_count < 135):  Optimize for test count
+  -> Metric: pass_count
+  -> Keep if: more tests pass, no regressions
+
+Phase 2 (pass_count == 135, rule_violations > 0):  Fix rule violations
+  -> Metric: rule_violations
+  -> Keep if: fewer violations, no test regressions
+  -> Run: make detect_rule_breaches
+
+Phase 3 (pass_count == 135, rule_violations == 0):  Optimize code quality
+  -> Metric: quality_pct
+  -> Keep if: quality improves, still legal, no test regressions
+  -> Run: make scoring_codequality
+```
+
+### Leaderboard check (every experiment in Phase 2+)
+
+```bash
+# Quick rule check (fast, run every experiment)
+make detect_rule_breaches 2>&1 | grep -c "FAIL"
+
+# Full scoring (slower, run every ~5 experiments)
+python scripts/leaderboard.py --us
+
+# Publish to leaderboard after a significant improvement
+make publish_results
 ```
 
 ## The Git Ratchet
@@ -110,7 +158,7 @@ experiment 4: fix .div() transform            58/135 (+3)  KEEP
 
 The branch only ever moves forward. The ledger remembers what was tried and discarded.
 
-## The Experiment Ledger (results.tsv)
+## The Experiment Ledger (results.csv)
 
 Tab-separated, gitignored, cumulative record of every experiment:
 
@@ -124,7 +172,7 @@ d4e5f6g   55    80    3           0          keep      fixed .mul() with Decimal
 
 ## The Outer Loop (Meta-Optimization)
 
-After N experiments, the agent can analyze patterns in results.tsv:
+After N experiments, the agent can analyze patterns in results.csv:
 
 1. **What categories of transforms improve test count?**
    - "All Big.js transforms improved pass count by 3-5 tests"
@@ -154,7 +202,7 @@ After N experiments, the agent can analyze patterns in results.tsv:
 If you run this loop for even one night before the hackathon, you walk in with:
 
 - A translator that already passes 100+ tests
-- A `results.tsv` showing every experiment the agent ran
+- A `results.csv` showing every experiment the agent ran
 - A git history showing gradual improvement (satisfies Rule 8)
 - Deep understanding of which transforms matter (for judge explanation)
 - A working system that can keep iterating during the event
@@ -169,13 +217,15 @@ From Karpathy's autoresearch:
 
 Applied here: **you do not write the translator. You write PROGRAM.md, the instructions for how the agent should build and improve the translator.** Then you sleep while it runs 500 experiments.
 
-## Implementation Deliverables
+## Implementation Deliverables (all built)
 
-1. **`PROGRAM.md`**: The agent protocol (what to edit, how to evaluate, keep/discard rules, strategy hints)
-2. **`scripts/evaluate.sh`**: Deterministic eval harness (runs translate+test, parses pytest output, extracts metrics)
-3. **`scripts/experiment.sh`**: Single experiment runner (commit, evaluate, decide, log)
-4. **`.gitignore` update**: For `results.tsv`
-5. **Transform pipeline**: `tt/tt/transforms/` with one file per pattern type
+1. **`PROGRAM.md`**: Agent protocol (what to edit, how to evaluate, keep/discard rules)
+2. **`scripts/evaluate.py`**: Translate+test, parse pytest, append to results.csv
+3. **`scripts/mark.py`**: Update last experiment status (keep/discard/baseline)
+4. **`scripts/stats.py`**: Improvement timeline, hit rate, score estimates
+5. **`scripts/leaderboard.py`**: Query Supabase for live standings, gap analysis, quality comparison
+6. **`results.csv`**: Experiment ledger (gitignored)
+7. **`runs/`**: Per-run pytest logs (gitignored)
 
 ## Architecture Diagram
 
@@ -205,7 +255,7 @@ PROGRAM.md  ------>  AGENT (Claude Code)
                   branch  HEAD~1
                     |     |
                     v     v
-                  results.tsv (log experiment)
+                  results.csv (log experiment)
                        |
                        v
                      LOOP (go to top, never stop)
