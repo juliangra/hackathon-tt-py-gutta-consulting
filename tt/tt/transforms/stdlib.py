@@ -3,13 +3,23 @@ from __future__ import annotations
 
 import ast as pyast
 
-from tt.transpiler import _name, _const, _call, _attr, translate_expr
 from tt.parser import get_text, Node
 from tt.config import TranslationConfig
+
+# Lazy import to avoid circular dependency
+_name = _const = _call = _attr = translate_expr = None
+
+
+def _init():
+    global _name, _const, _call, _attr, translate_expr
+    if _name is None:
+        from tt.transpiler import _name as n, _const as c, _call as ca, _attr as a, translate_expr as te
+        _name, _const, _call, _attr, translate_expr = n, c, ca, a, te
 
 
 def try_date_fns(func_name: str, args: list) -> pyast.expr | None:
     """Handle date-fns function calls."""
+    _init()
     if func_name == "format":
         return _call(_attr(args[0], "isoformat")) if args else _const("")
     if func_name == "isBefore" and len(args) >= 2:
@@ -52,6 +62,7 @@ def try_date_fns(func_name: str, args: list) -> pyast.expr | None:
 
 def try_lodash(func_name: str, args: list, func_node, cfg: TranslationConfig) -> pyast.expr | None:
     """Handle lodash and other known function calls."""
+    _init()
     if func_name == "cloneDeep" and args:
         return _call(_attr(_name("copy"), "deepcopy"), [args[0]])
     if func_name == "sortBy":
@@ -75,6 +86,7 @@ def try_lodash(func_name: str, args: list, func_node, cfg: TranslationConfig) ->
 
 def try_array_method(name: str, obj_node: Node, args: list, cfg) -> pyast.expr | None:
     """Handle array/collection method calls."""
+    _init()
     if name == "includes":
         return pyast.Compare(left=args[0] if args else _const(None),
             ops=[pyast.In()], comparators=[translate_expr(obj_node, cfg)])
