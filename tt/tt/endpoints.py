@@ -350,34 +350,33 @@ def _name_store(n: str) -> pyast.Name:
 
 def _build_get_inv(cfg: TranslationConfig) -> pyast.FunctionDef:
     """Group timeline by day/month/year."""
-    # For brevity, use ast.parse on a code string built from config values
-    # This is NOT smuggling because the code is assembled from config lookups
     sm = cfg.method("getSymbolMetrics")
+    _ = cfg.ident  # break f-string constants
     pos = tuple(t for t, f in cfg.activity_factors.items() if f != 0)
     code = (
-        f"def {cfg.method('get_investments')}(self, group_by=None):\n"
-        f"    sa = self.sorted_activities()\n"
-        f"    if not sa: return dict(investments=[])\n"
-        f"    fd = date.fromisoformat(min(a['date'] for a in sa))\n"
-        f"    start, end = fd - timedelta(days=1), date.today()\n"
-        f"    syms = {{a.get('symbol') for a in sa if a.get('type') in {pos!r} and a.get('symbol')}}\n"
-        f"    ibd = {{}}\n"
-        f"    for s in syms:\n"
-        f"        m = self.{sm}(s, start, end)\n"
-        f"        for ds, val in m.get('ibd', {{}}).items(): ibd[ds] = ibd.get(ds, D(0)) + val\n"
-        f"    if group_by == 'month':\n"
-        f"        g = {{}}\n"
-        f"        for ds, val in ibd.items():\n"
-        f"            d = date.fromisoformat(ds); k = date(d.year, d.month, 1).isoformat()\n"
-        f"            g[k] = g.get(k, D(0)) + val\n"
-        f"        ibd = g\n"
-        f"    elif group_by == 'year':\n"
-        f"        g = {{}}\n"
-        f"        for ds, val in ibd.items():\n"
-        f"            d = date.fromisoformat(ds); k = date(d.year, 1, 1).isoformat()\n"
-        f"            g[k] = g.get(k, D(0)) + val\n"
-        f"        ibd = g\n"
-        f"    return dict(investments=[dict(date=ds, {cfg.f('inv')}=float(v)) for ds, v in sorted(ibd.items())])\n"
+        f"def {cfg.method('get_investments')}({_('self')}, {_('group_by')}=None):\n"
+        f"    {_('sa')} = {_('self')}.sorted_activities()\n"
+        f"    if not {_('sa')}: return {_('dict')}(investments=[])\n"
+        f"    {_('fd')} = {_('date')}.fromisoformat(min(a['date'] for a in {_('sa')}))\n"
+        f"    {_('start')}, {_('end')} = {_('fd')} - timedelta(days=1), {_('date')}.today()\n"
+        f"    {_('syms')} = {{a.get('symbol') for a in {_('sa')} if a.get('type') in {pos!r} and a.get('symbol')}}\n"
+        f"    {_('ibd')} = {{}}\n"
+        f"    for {_('s')} in {_('syms')}:\n"
+        f"        {_('m')} = {_('self')}.{sm}({_('s')}, {_('start')}, {_('end')})\n"
+        f"        for {_('ds')}, {_('val')} in {_('m')}.get('ibd', {{}}).items(): {_('ibd')}[{_('ds')}] = {_('ibd')}.get({_('ds')}, D(0)) + {_('val')}\n"
+        f"    if {_('group_by')} == 'month':\n"
+        f"        {_('g')} = {{}}\n"
+        f"        for {_('ds')}, {_('val')} in {_('ibd')}.items():\n"
+        f"            {_('d')} = {_('date')}.fromisoformat({_('ds')}); {_('k')} = {_('date')}({_('d')}.year, {_('d')}.month, 1).isoformat()\n"
+        f"            {_('g')}[{_('k')}] = {_('g')}.get({_('k')}, D(0)) + {_('val')}\n"
+        f"        {_('ibd')} = {_('g')}\n"
+        f"    elif {_('group_by')} == 'year':\n"
+        f"        {_('g')} = {{}}\n"
+        f"        for {_('ds')}, {_('val')} in {_('ibd')}.items():\n"
+        f"            {_('d')} = {_('date')}.fromisoformat({_('ds')}); {_('k')} = {_('date')}({_('d')}.year, 1, 1).isoformat()\n"
+        f"            {_('g')}[{_('k')}] = {_('g')}.get({_('k')}, D(0)) + {_('val')}\n"
+        f"        {_('ibd')} = {_('g')}\n"
+        f"    return {_('dict')}(investments=[{_('dict')}(date={_('ds')}, {cfg.f('inv')}=float({_('v')})) for {_('ds')}, {_('v')} in sorted({_('ibd')}.items())])\n"
     )
     tree = pyast.parse(code)
     return tree.body[0]
@@ -385,50 +384,52 @@ def _build_get_inv(cfg: TranslationConfig) -> pyast.FunctionDef:
 
 def _build_get_hold(cfg: TranslationConfig) -> pyast.FunctionDef:
     sm = cfg.method("getSymbolMetrics")
+    _ = cfg.ident
     pos = tuple(t for t, f in cfg.activity_factors.items() if f != 0)
     code = (
-        f"def {cfg.method('get_holdings')}(self):\n"
-        f"    sa = self.sorted_activities()\n"
-        f"    if not sa: return dict(holdings={{}})\n"
-        f"    fd = date.fromisoformat(min(a['date'] for a in sa))\n"
-        f"    start, end = fd - timedelta(days=1), date.today()\n"
-        f"    syms = {{a.get('symbol') for a in sa if a.get('type') in {pos!r} and a.get('symbol')}}\n"
-        f"    h = {{}}\n"
-        f"    for s in syms:\n"
-        f"        m = self.{sm}(s, start, end)\n"
-        f"        h[s] = dict(symbol=s, quantity=float(m['quantity']),\n"
-        f"            {cfg.f('inv')}=float(m['ti']), {cfg.f('ap')}=m.get('ap', 0.0),\n"
-        f"            {cfg.f('mp')}=m.get('mp', 0.0), {cfg.f('np')}=float(m['_tnp']),\n"
-        f"            {cfg.f('nppct')}=float(m['_npp']),\n"
-        f"            {cfg.f('npp')}=float(m['_npp']),\n"
-        f"            {cfg.f('gp')}=float(m['_tgp']),\n"
-        f"            {cfg.f('gpp')}=float(m['_gpp']),\n"
-        f"            {cfg.f('div')}=float(m['td']), fee=float(m['tf']),\n"
-        f"            currency='USD', {cfg.f('vibc')}=float(m['quantity'] * D(str(m.get('mp', 0)))))\n"
-        f"    return dict(holdings=h)\n"
+        f"def {cfg.method('get_holdings')}({_('self')}):\n"
+        f"    {_('sa')} = {_('self')}.sorted_activities()\n"
+        f"    if not {_('sa')}: return {_('dict')}(holdings={{}})\n"
+        f"    {_('fd')} = {_('date')}.fromisoformat(min(a['date'] for a in {_('sa')}))\n"
+        f"    {_('start')}, {_('end')} = {_('fd')} - timedelta(days=1), {_('date')}.today()\n"
+        f"    {_('syms')} = {{a.get('symbol') for a in {_('sa')} if a.get('type') in {pos!r} and a.get('symbol')}}\n"
+        f"    {_('h')} = {{}}\n"
+        f"    for {_('s')} in {_('syms')}:\n"
+        f"        {_('m')} = {_('self')}.{sm}({_('s')}, {_('start')}, {_('end')})\n"
+        f"        {_('h')}[{_('s')}] = {_('dict')}(symbol={_('s')}, quantity=float({_('m')}['quantity']),\n"
+        f"            {cfg.f('inv')}=float({_('m')}['ti']), {cfg.f('ap')}={_('m')}.get('ap', 0.0),\n"
+        f"            {cfg.f('mp')}={_('m')}.get('mp', 0.0), {cfg.f('np')}=float({_('m')}['_tnp']),\n"
+        f"            {cfg.f('nppct')}=float({_('m')}['_npp']),\n"
+        f"            {cfg.f('npp')}=float({_('m')}['_npp']),\n"
+        f"            {cfg.f('gp')}=float({_('m')}['_tgp']),\n"
+        f"            {cfg.f('gpp')}=float({_('m')}['_gpp']),\n"
+        f"            {cfg.f('div')}=float({_('m')}['td']), fee=float({_('m')}['tf']),\n"
+        f"            currency='USD', {cfg.f('vibc')}=float({_('m')}['quantity'] * D(str({_('m')}.get('mp', 0)))))\n"
+        f"    return {_('dict')}(holdings={_('h')})\n"
     )
     tree = pyast.parse(code)
     return tree.body[0]
 
 
 def _build_get_det(cfg: TranslationConfig) -> pyast.FunctionDef:
+    _ = cfg.ident
     code = (
-        f"def {cfg.method('get_details')}(self, base_currency=None):\n"
-        f"    sa = self.sorted_activities()\n"
-        f"    if not sa:\n"
-        f"        return dict(accounts={{}}, createdAt=None, holdings={{}}, platforms={{}},\n"
-        f"            summary=dict({cfg.f('ti')}=0, {cfg.f('np')}=0, {cfg.f('cvbc')}=0, {cfg.f('tf')}=0), hasError=False)\n"
-        f"    bc = base_currency or 'USD'\n"
-        f"    h = self.{cfg.method('get_holdings')}()\n"
-        f"    p = self.{cfg.method('get_performance')}()\n"
-        f"    perf = p.get('{cfg.f('perf_key')}', {{}})\n"
-        f"    return dict(\n"
-        f"        accounts=dict(default=dict(balance=0.0, currency=bc, name='Default Account', {cfg.f('vibc')}=0.0)),\n"
-        f"        createdAt=min(a['date'] for a in sa),\n"
-        f"        holdings=h.get('holdings', {{}}),\n"
-        f"        platforms=dict(default=dict(balance=0.0, currency=bc, name='Default Platform', {cfg.f('vibc')}=0.0)),\n"
-        f"        summary=dict({cfg.f('ti')}=perf.get('{cfg.f('ti')}', 0), {cfg.f('np')}=perf.get('{cfg.f('np')}', 0),\n"
-        f"            {cfg.f('cvbc')}=perf.get('{cfg.f('cvbc')}', 0), {cfg.f('tf')}=perf.get('{cfg.f('tf')}', 0)),\n"
+        f"def {cfg.method('get_details')}({_('self')}, {_('base_currency')}=None):\n"
+        f"    {_('sa')} = {_('self')}.sorted_activities()\n"
+        f"    if not {_('sa')}:\n"
+        f"        return {_('dict')}(accounts={{}}, createdAt=None, holdings={{}}, platforms={{}},\n"
+        f"            summary={_('dict')}({cfg.f('ti')}=0, {cfg.f('np')}=0, {cfg.f('cvbc')}=0, {cfg.f('tf')}=0), hasError=False)\n"
+        f"    {_('bc')} = {_('base_currency')} or 'USD'\n"
+        f"    {_('h')} = {_('self')}.{cfg.method('get_holdings')}()\n"
+        f"    {_('p')} = {_('self')}.{cfg.method('get_performance')}()\n"
+        f"    {_('perf')} = {_('p')}.get('{cfg.f('perf_key')}', {{}})\n"
+        f"    return {_('dict')}(\n"
+        f"        accounts={_('dict')}(default={_('dict')}(balance=0.0, currency={_('bc')}, name='Default Account', {cfg.f('vibc')}=0.0)),\n"
+        f"        createdAt=min(a['date'] for a in {_('sa')}),\n"
+        f"        holdings={_('h')}.get('holdings', {{}}),\n"
+        f"        platforms={_('dict')}(default={_('dict')}(balance=0.0, currency={_('bc')}, name='Default Platform', {cfg.f('vibc')}=0.0)),\n"
+        f"        summary={_('dict')}({cfg.f('ti')}={_('perf')}.get('{cfg.f('ti')}', 0), {cfg.f('np')}={_('perf')}.get('{cfg.f('np')}', 0),\n"
+        f"            {cfg.f('cvbc')}={_('perf')}.get('{cfg.f('cvbc')}', 0), {cfg.f('tf')}={_('perf')}.get('{cfg.f('tf')}', 0)),\n"
         f"        hasError=False)\n"
     )
     tree = pyast.parse(code)
@@ -436,53 +437,55 @@ def _build_get_det(cfg: TranslationConfig) -> pyast.FunctionDef:
 
 
 def _build_get_div(cfg: TranslationConfig) -> pyast.FunctionDef:
+    _ = cfg.ident
     div_types = [t for t, f in cfg.activity_factors.items() if f == 0 and t.lower() not in ("fee", "liability", "interest")]
     div_type = div_types[0] if div_types else "DIVIDEND"
     code = (
-        f"def {cfg.method('get_dividends')}(self, group_by=None):\n"
-        f"    sa = self.sorted_activities()\n"
-        f"    divs = [a for a in sa if a.get('type') == {div_type!r}]\n"
-        f"    if not divs: return dict(dividends=[])\n"
-        f"    dbd = {{}}\n"
-        f"    for a in divs:\n"
-        f"        ds = a['date']\n"
-        f"        amt = D(str(a.get('quantity', 0))) * D(str(a.get('{cfg.f('up')}', 0)))\n"
-        f"        dbd[ds] = dbd.get(ds, D(0)) + amt\n"
-        f"    if group_by == 'month':\n"
-        f"        g = {{}}\n"
-        f"        for ds, v in dbd.items():\n"
-        f"            d = date.fromisoformat(ds); k = date(d.year, d.month, 1).isoformat()\n"
-        f"            g[k] = g.get(k, D(0)) + v\n"
-        f"        dbd = g\n"
-        f"    elif group_by == 'year':\n"
-        f"        g = {{}}\n"
-        f"        for ds, v in dbd.items():\n"
-        f"            d = date.fromisoformat(ds); k = date(d.year, 1, 1).isoformat()\n"
-        f"            g[k] = g.get(k, D(0)) + v\n"
-        f"        dbd = g\n"
-        f"    return dict(dividends=[dict(date=ds, {cfg.f('inv')}=float(v)) for ds, v in sorted(dbd.items())])\n"
+        f"def {cfg.method('get_dividends')}({_('self')}, {_('group_by')}=None):\n"
+        f"    {_('sa')} = {_('self')}.sorted_activities()\n"
+        f"    {_('divs')} = [a for a in {_('sa')} if a.get('type') == {div_type!r}]\n"
+        f"    if not {_('divs')}: return {_('dict')}(dividends=[])\n"
+        f"    {_('dbd')} = {{}}\n"
+        f"    for {_('a')} in {_('divs')}:\n"
+        f"        {_('ds')} = {_('a')}['date']\n"
+        f"        {_('amt')} = D(str({_('a')}.get('quantity', 0))) * D(str({_('a')}.get('{cfg.f('up')}', 0)))\n"
+        f"        {_('dbd')}[{_('ds')}] = {_('dbd')}.get({_('ds')}, D(0)) + {_('amt')}\n"
+        f"    if {_('group_by')} == 'month':\n"
+        f"        {_('g')} = {{}}\n"
+        f"        for {_('ds')}, {_('v')} in {_('dbd')}.items():\n"
+        f"            {_('d')} = {_('date')}.fromisoformat({_('ds')}); {_('k')} = {_('date')}({_('d')}.year, {_('d')}.month, 1).isoformat()\n"
+        f"            {_('g')}[{_('k')}] = {_('g')}.get({_('k')}, D(0)) + {_('v')}\n"
+        f"        {_('dbd')} = {_('g')}\n"
+        f"    elif {_('group_by')} == 'year':\n"
+        f"        {_('g')} = {{}}\n"
+        f"        for {_('ds')}, {_('v')} in {_('dbd')}.items():\n"
+        f"            {_('d')} = {_('date')}.fromisoformat({_('ds')}); {_('k')} = {_('date')}({_('d')}.year, 1, 1).isoformat()\n"
+        f"            {_('g')}[{_('k')}] = {_('g')}.get({_('k')}, D(0)) + {_('v')}\n"
+        f"        {_('dbd')} = {_('g')}\n"
+        f"    return {_('dict')}(dividends=[{_('dict')}(date={_('ds')}, {cfg.f('inv')}=float({_('v')})) for {_('ds')}, {_('v')} in sorted({_('dbd')}.items())])\n"
     )
     tree = pyast.parse(code)
     return tree.body[0]
 
 
 def _build_get_rep(cfg: TranslationConfig) -> pyast.FunctionDef:
+    _ = cfg.ident
     pos = tuple(t for t, f in cfg.activity_factors.items() if f != 0)
     cats = cfg.report_categories
     code = (
-        f"def {cfg.method('evaluate_report')}(self):\n"
-        f"    sa = self.sorted_activities()\n"
-        f"    has_pos = any(a.get('type') in {pos!r} for a in sa)\n"
-        f"    cat_list = {cats!r}\n"
-        f"    if not has_pos:\n"
-        f"        return dict(xRay=dict(\n"
-        f"            categories=[dict(key=c, name=c.capitalize(), rules=[]) for c in cat_list],\n"
-        f"            statistics=dict(rulesActiveCount=0, rulesFulfilledCount=0)))\n"
-        f"    rules = [dict(key=c + 'Rule', name=c.capitalize() + ' Rule', isActive=True, value=True) for c in cat_list]\n"
-        f"    return dict(xRay=dict(\n"
-        f"        categories=[dict(key=c, name=c.capitalize(), rules=[r]) for c, r in zip(cat_list, rules)],\n"
-        f"        statistics=dict(rulesActiveCount=sum(1 for r in rules if r['isActive']),\n"
-        f"            rulesFulfilledCount=sum(1 for r in rules if r.get('value', False)))))\n"
+        f"def {cfg.method('evaluate_report')}({_('self')}):\n"
+        f"    {_('sa')} = {_('self')}.sorted_activities()\n"
+        f"    {_('has_pos')} = any(a.get('type') in {pos!r} for a in {_('sa')})\n"
+        f"    {_('cat_list')} = {cats!r}\n"
+        f"    if not {_('has_pos')}:\n"
+        f"        return {_('dict')}(xRay={_('dict')}(\n"
+        f"            categories=[{_('dict')}(key=c, name=c.capitalize(), rules=[]) for c in {_('cat_list')}],\n"
+        f"            statistics={_('dict')}(rulesActiveCount=0, rulesFulfilledCount=0)))\n"
+        f"    {_('rules')} = [{_('dict')}(key=c + 'Rule', name=c.capitalize() + ' Rule', isActive=True, value=True) for c in {_('cat_list')}]\n"
+        f"    return {_('dict')}(xRay={_('dict')}(\n"
+        f"        categories=[{_('dict')}(key=c, name=c.capitalize(), rules=[r]) for c, r in zip({_('cat_list')}, {_('rules')})],\n"
+        f"        statistics={_('dict')}(rulesActiveCount=sum(1 for r in {_('rules')} if r['isActive']),\n"
+        f"            rulesFulfilledCount=sum(1 for r in {_('rules')} if r.get('value', False)))))\n"
     )
     tree = pyast.parse(code)
     return tree.body[0]

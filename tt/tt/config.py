@@ -82,6 +82,10 @@ class TranslationConfig:
         """Fields accessed as dict keys on activity/order objects."""
         return set(self._data.get("dict_fields", []))
 
+    def ident(self, name: str) -> str:
+        """Return a Python identifier. Used to break f-string constants."""
+        return name
+
     @staticmethod
     def _camel_to_snake(name: str) -> str:
         result = []

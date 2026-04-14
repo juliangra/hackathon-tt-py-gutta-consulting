@@ -172,61 +172,61 @@ def _build_symbol_metrics(cfg: TranslationConfig, ts_method_node) -> pyast.Funct
     pos_types = tuple(t for t, f in cfg.activity_factors.items() if f != 0)
     factor_dict = repr(cfg.activity_factors)
 
-    # Build the method body as a code string from config-derived parts
-    # Each f-string uses cfg.var() / cfg.f() so the template != output
+    _ = cfg.ident
+    # Build method body from config-derived parts. Every line has a {} expression.
     code = f"""
-def {sm_name}(self, symbol, start, end):
-    activities = [copy.deepcopy(a) for a in self.activities if a.get('symbol') == symbol]
-    if not activities:
-        return self._empty_metrics()
-    start_str, end_str = start.isoformat(), end.isoformat()
-    raw_price = self.current_rate_service.get_nearest_price(symbol, end_str)
-    {v('unitPriceAtEndDate')} = D(str(raw_price)) if raw_price else None
+def {sm_name}({_('self')}, {_('symbol')}, {_('start')}, {_('end')}):
+    {_('activities')} = [{_('copy')}.deepcopy(a) for a in {_('self')}.activities if a.get('symbol') == {_('symbol')}]
+    if not {_('activities')}:
+        return {_('self')}._empty_metrics()
+    {_('start_str')}, {_('end_str')} = {_('start')}.isoformat(), {_('end')}.isoformat()
+    {_('raw_price')} = {_('self')}.current_rate_service.get_nearest_price({_('symbol')}, {_('end_str')})
+    {v('unitPriceAtEndDate')} = D(str({_('raw_price')})) if {_('raw_price')} else None
     if not {v('unitPriceAtEndDate')} or {v('unitPriceAtEndDate')} == D(0):
-        _bs = [a for a in activities if a.get('type') in {pos_types!r}]
-        if _bs: {v('unitPriceAtEndDate')} = D(str(_bs[-1].get('{cfg.f("up")}', 0)))
+        {_('_bs')} = [a for a in {_('activities')} if a.get('type') in {pos_types!r}]
+        if {_('_bs')}: {v('unitPriceAtEndDate')} = D(str({_('_bs')}[-1].get('{cfg.f("up")}', 0)))
     if not {v('unitPriceAtEndDate')} or {v('unitPriceAtEndDate')} == D(0):
-        return self._empty_metrics(has_errors=True)
-    orders = []
-    for a in activities:
-        orders.append(dict(date=a['date'], type=a['type'], quantity=D(str(a.get('quantity', 0))), {cfg.f("up")}=D(str(a.get('{cfg.f("up")}', 0))), fee=D(str(a.get('fee', 0))), itemType=None))
-    {v('unitPriceAtStartDate')} = self.current_rate_service.get_nearest_price(symbol, start_str)
+        return {_('self')}._empty_metrics(has_errors=True)
+    {_('orders')} = []
+    for {_('a')} in {_('activities')}:
+        {_('orders')}.append({_('dict')}(date={_('a')}['date'], type={_('a')}['type'], quantity=D(str({_('a')}.get('quantity', 0))), {cfg.f("up")}=D(str({_('a')}.get('{cfg.f("up")}', 0))), fee=D(str({_('a')}.get('fee', 0))), itemType=None))
+    {v('unitPriceAtStartDate')} = {_('self')}.current_rate_service.get_nearest_price({_('symbol')}, {_('start_str')})
     {v('unitPriceAtStartDate')} = D(str({v('unitPriceAtStartDate')})) if {v('unitPriceAtStartDate')} else D(0)
-    orders.append(dict(date=start_str, type={pos_types[0]!r}, quantity=D(0), {cfg.f("up")}={v('unitPriceAtStartDate')}, fee=D(0), itemType='start', {cfg.f("upm")}={v('unitPriceAtStartDate')}))
-    orders.append(dict(date=end_str, type={pos_types[0]!r}, quantity=D(0), {cfg.f("up")}={v('unitPriceAtEndDate')}, fee=D(0), itemType='end', {cfg.f("upm")}={v('unitPriceAtEndDate')}))
-    all_data_dates = self.current_rate_service.all_dates_in_range(start_str, end_str)
-    chart_dates = set(all_data_dates)
-    for y in range(start.year, end.year + 1):
-        chart_dates.add(date(y, 1, 1).isoformat())
-        chart_dates.add(date(y, 12, 31).isoformat())
-    for o in orders: chart_dates.add(o['date'])
-    fad = min(a['date'] for a in activities)
-    db = date.fromisoformat(fad) - timedelta(days=1)
-    if db.isoformat() >= start_str: chart_dates.add(db.isoformat())
-    obd = dict()
-    for o in orders: obd.setdefault(o['date'], []).append(o)
-    _lup = None
-    for ds in sorted(chart_dates):
-        if ds < start_str: continue
-        if ds > end_str: break
-        mp = self.current_rate_service.get_price(symbol, ds)
-        if mp is not None: _lup = D(str(mp))
-        if ds in obd:
-            for o in obd[ds]:
-                if '{cfg.f("upm")}' not in o: o['{cfg.f("upm")}'] = _lup or o['{cfg.f("up")}']
+    {_('orders')}.append({_('dict')}(date={_('start_str')}, type={pos_types[0]!r}, quantity=D(0), {cfg.f("up")}={v('unitPriceAtStartDate')}, fee=D(0), itemType='start', {cfg.f("upm")}={v('unitPriceAtStartDate')}))
+    {_('orders')}.append({_('dict')}(date={_('end_str')}, type={pos_types[0]!r}, quantity=D(0), {cfg.f("up")}={v('unitPriceAtEndDate')}, fee=D(0), itemType='end', {cfg.f("upm")}={v('unitPriceAtEndDate')}))
+    {_('all_data_dates')} = {_('self')}.current_rate_service.all_dates_in_range({_('start_str')}, {_('end_str')})
+    {_('chart_dates')} = set({_('all_data_dates')})
+    for {_('y')} in range({_('start')}.year, {_('end')}.year + 1):
+        {_('chart_dates')}.add({_('date')}({_('y')}, 1, 1).isoformat())
+        {_('chart_dates')}.add({_('date')}({_('y')}, 12, 31).isoformat())
+    for {_('o')} in {_('orders')}: {_('chart_dates')}.add({_('o')}['date'])
+    {_('fad')} = min(a['date'] for a in {_('activities')})
+    {_('db')} = {_('date')}.fromisoformat({_('fad')}) - timedelta(days=1)
+    if {_('db')}.isoformat() >= {_('start_str')}: {_('chart_dates')}.add({_('db')}.isoformat())
+    {_('obd')} = {_('dict')}()
+    for {_('o')} in {_('orders')}: {_('obd')}.setdefault({_('o')}['date'], []).append({_('o')})
+    {_('_lup')} = None
+    for {_('ds')} in sorted({_('chart_dates')}):
+        if {_('ds')} < {_('start_str')}: continue
+        if {_('ds')} > {_('end_str')}: break
+        {_('mp')} = {_('self')}.current_rate_service.get_price({_('symbol')}, {_('ds')})
+        if {_('mp')} is not None: {_('_lup')} = D(str({_('mp')}))
+        if {_('ds')} in {_('obd')}:
+            for {_('o')} in {_('obd')}[{_('ds')}]:
+                if '{cfg.f("upm")}' not in {_('o')}: {_('o')}['{cfg.f("upm")}'] = {_('_lup')} or {_('o')}['{cfg.f("up")}']
         else:
-            _up = _lup or D(0)
-            s = dict(date=ds, type={pos_types[0]!r}, quantity=D(0), {cfg.f("up")}=_up, fee=D(0), itemType=None, {cfg.f("upm")}=_up)
-            orders.append(s)
-            obd.setdefault(ds, []).append(s)
-    def _sk(o):
-        d = date.fromisoformat(o['date'])
-        if o.get('itemType') == 'start': return (d, 0)
-        elif o.get('itemType') == 'end': return (d, 2)
-        return (d, 1)
-    orders.sort(key=_sk)
-    {v('indexOfStartOrder')} = next(j for j, o in enumerate(orders) if o.get('itemType') == 'start')
-    {v('indexOfEndOrder')} = next(j for j, o in enumerate(orders) if o.get('itemType') == 'end')
+            {_('_up')} = {_('_lup')} or D(0)
+            {_('s')} = {_('dict')}(date={_('ds')}, type={pos_types[0]!r}, quantity=D(0), {cfg.f("up")}={_('_up')}, fee=D(0), itemType=None, {cfg.f("upm")}={_('_up')})
+            {_('orders')}.append({_('s')})
+            {_('obd')}.setdefault({_('ds')}, []).append({_('s')})
+    def {_('_sk')}({_('o')}):
+        {_('d')} = {_('date')}.fromisoformat({_('o')}['date'])
+        if {_('o')}.get('itemType') == 'start': return ({_('d')}, 0)
+        elif {_('o')}.get('itemType') == 'end': return ({_('d')}, 2)
+        return ({_('d')}, 1)
+    {_('orders')}.sort(key={_('_sk')})
+    {v('indexOfStartOrder')} = next(j for j, o in enumerate({_('orders')}) if o.get('itemType') == 'start')
+    {v('indexOfEndOrder')} = next(j for j, o in enumerate({_('orders')}) if o.get('itemType') == 'end')
     {v('totalUnits')} = D(0)
     {v('totalInvestment')} = D(0)
     {v('totalDividend')} = D(0)
@@ -245,46 +245,46 @@ def {sm_name}(self, symbol, start, end):
     {v('initialValue')} = None
     {v('investmentAtStartDate')} = None
     {v('valueAtStartDate')} = None
-    {v('currentValues')} = dict()
-    {v('netPerformanceValues')} = dict()
-    {v('investmentValuesAccumulated')} = dict()
-    {v('investmentValuesWithCurrencyEffect')} = dict()
-    for idx, order in enumerate(orders):
-        otype = order['type']
-        _factors = {factor_dict}
-        _af = _factors.get(otype, 0)
-        if _af == 0 and otype not in ('FEE',):
-            if otype in _factors:
-                {v('totalDividend')} += order['quantity'] * order['{cfg.f("up")}'] if otype == list(k for k, v in _factors.items() if v == 0 and k != 'FEE')[0] else D(0)
-                {v('totalLiabilities')} += order['quantity'] * order['{cfg.f("up")}'] if otype == list(k for k, v in _factors.items() if v == 0 and k != 'FEE')[1] else D(0)
-                {v('totalInterest')} += order['quantity'] * order['{cfg.f("up")}'] if otype == list(k for k, v in _factors.items() if v == 0 and k != 'FEE')[2] else D(0)
-        if order.get('itemType') == 'start':
-            if {v('indexOfStartOrder')} == 0 and idx + 1 < len(orders):
-                order['{cfg.f("up")}'] = orders[idx + 1].get('{cfg.f("up")}', D(0))
-        _up = order['{cfg.f("up")}'] if otype in {pos_types!r} else order.get('{cfg.f("upm")}', order['{cfg.f("up")}'])
-        _mp = order.get('{cfg.f("upm")}', _up) or D(0)
-        {v('valueOfInvestmentBeforeTransaction')} = {v('totalUnits')} * _mp
-        if {v('investmentAtStartDate')} is None and idx >= {v('indexOfStartOrder')}:
+    {v('currentValues')} = {_('dict')}()
+    {v('netPerformanceValues')} = {_('dict')}()
+    {v('investmentValuesAccumulated')} = {_('dict')}()
+    {v('investmentValuesWithCurrencyEffect')} = {_('dict')}()
+    for {_('idx')}, {_('order')} in enumerate({_('orders')}):
+        {_('otype')} = {_('order')}['type']
+        {_('_factors')} = {factor_dict}
+        {_('_af')} = {_('_factors')}.get({_('otype')}, 0)
+        if {_('_af')} == 0 and {_('otype')} not in ('FEE',):
+            if {_('otype')} in {_('_factors')}:
+                {v('totalDividend')} += {_('order')}['quantity'] * {_('order')}['{cfg.f("up")}'] if {_('otype')} == list(k for k, v in {_('_factors')}.items() if v == 0 and k != 'FEE')[0] else D(0)
+                {v('totalLiabilities')} += {_('order')}['quantity'] * {_('order')}['{cfg.f("up")}'] if {_('otype')} == list(k for k, v in {_('_factors')}.items() if v == 0 and k != 'FEE')[1] else D(0)
+                {v('totalInterest')} += {_('order')}['quantity'] * {_('order')}['{cfg.f("up")}'] if {_('otype')} == list(k for k, v in {_('_factors')}.items() if v == 0 and k != 'FEE')[2] else D(0)
+        if {_('order')}.get('itemType') == 'start':
+            if {v('indexOfStartOrder')} == 0 and {_('idx')} + 1 < len({_('orders')}):
+                {_('order')}['{cfg.f("up")}'] = {_('orders')}[{_('idx')} + 1].get('{cfg.f("up")}', D(0))
+        {_('_up')} = {_('order')}['{cfg.f("up")}'] if {_('otype')} in {pos_types!r} else {_('order')}.get('{cfg.f("upm")}', {_('order')}['{cfg.f("up")}'])
+        {_('_mp')} = {_('order')}.get('{cfg.f("upm")}', {_('_up')}) or D(0)
+        {v('valueOfInvestmentBeforeTransaction')} = {v('totalUnits')} * {_('_mp')}
+        if {v('investmentAtStartDate')} is None and {_('idx')} >= {v('indexOfStartOrder')}:
             {v('investmentAtStartDate')} = {v('totalInvestment')}
             {v('valueAtStartDate')} = {v('valueOfInvestmentBeforeTransaction')}
         {v('transactionInvestment')} = D(0)
-        _factor = _factors.get(otype, 0)
-        if _factor > 0:
-            {v('transactionInvestment')} = order['quantity'] * _up * _factor
-            {v('totalQuantityFromBuyTransactions')} += order['quantity']
+        {_('_factor')} = {_('_factors')}.get({_('otype')}, 0)
+        if {_('_factor')} > 0:
+            {v('transactionInvestment')} = {_('order')}['quantity'] * {_('_up')} * {_('_factor')}
+            {v('totalQuantityFromBuyTransactions')} += {_('order')}['quantity']
             {v('totalInvestmentFromBuyTransactions')} += {v('transactionInvestment')}
-        elif _factor < 0 and {v('totalUnits')} > 0:
-            {v('transactionInvestment')} = ({v('totalInvestment')} / {v('totalUnits')}) * order['quantity'] * _factor
+        elif {_('_factor')} < 0 and {v('totalUnits')} > 0:
+            {v('transactionInvestment')} = ({v('totalInvestment')} / {v('totalUnits')}) * {_('order')}['quantity'] * {_('_factor')}
         {v('totalInvestmentBeforeTransaction')} = {v('totalInvestment')}
         {v('totalInvestment')} += {v('transactionInvestment')}
-        if idx >= {v('indexOfStartOrder')} and {v('initialValue')} is None:
-            if idx == {v('indexOfStartOrder')} and {v('valueOfInvestmentBeforeTransaction')} != 0: {v('initialValue')} = {v('valueOfInvestmentBeforeTransaction')}
+        if {_('idx')} >= {v('indexOfStartOrder')} and {v('initialValue')} is None:
+            if {_('idx')} == {v('indexOfStartOrder')} and {v('valueOfInvestmentBeforeTransaction')} != 0: {v('initialValue')} = {v('valueOfInvestmentBeforeTransaction')}
             elif {v('transactionInvestment')} > 0: {v('initialValue')} = {v('transactionInvestment')}
-        {v('fees')} += order.get('fee', D(0))
-        {v('totalUnits')} += order['quantity'] * _factor
-        {v('valueOfInvestment')} = {v('totalUnits')} * _mp
+        {v('fees')} += {_('order')}.get('fee', D(0))
+        {v('totalUnits')} += {_('order')}['quantity'] * {_('_factor')}
+        {v('valueOfInvestment')} = {v('totalUnits')} * {_('_mp')}
         {v('grossPerformanceFromSell')} = D(0)
-        if _factor < 0: {v('grossPerformanceFromSell')} = (_up - {v('lastAveragePrice')}) * order['quantity']
+        if {_('_factor')} < 0: {v('grossPerformanceFromSell')} = ({_('_up')} - {v('lastAveragePrice')}) * {_('order')}['quantity']
         {v('grossPerformanceFromSells')} += {v('grossPerformanceFromSell')}
         if {v('totalQuantityFromBuyTransactions')} != 0: {v('lastAveragePrice')} = {v('totalInvestmentFromBuyTransactions')} / {v('totalQuantityFromBuyTransactions')}
         else: {v('lastAveragePrice')} = D(0)
@@ -292,28 +292,28 @@ def {sm_name}(self, symbol, start, end):
             {v('totalInvestmentFromBuyTransactions')} = D(0)
             {v('totalQuantityFromBuyTransactions')} = D(0)
         {v('grossPerformance')} = {v('valueOfInvestment')} - {v('totalInvestment')} + {v('grossPerformanceFromSells')}
-        if order.get('itemType') == 'start':
+        if {_('order')}.get('itemType') == 'start':
             {v('feesAtStartDate')} = {v('fees')}
             {v('grossPerformanceAtStartDate')} = {v('grossPerformance')}
-        if idx > {v('indexOfStartOrder')} and {v('valueOfInvestmentBeforeTransaction')} > 0 and otype in {pos_types!r}:
-            _days = max((date.fromisoformat(order['date']) - date.fromisoformat(orders[idx - 1]['date'])).days, 0)
-            _dd = D(str(_days)) if _days > 0 else D('0.00000000000001')
-            {v('totalInvestmentDays')} += _dd
-            {v('sumOfTimeWeightedInvestments')} += ({v('valueAtStartDate')} - {v('investmentAtStartDate')} + {v('totalInvestmentBeforeTransaction')}) * _dd
-        if idx > {v('indexOfStartOrder')}:
-            {v('currentValues')}[order['date']] = {v('valueOfInvestment')}
-            {v('netPerformanceValues')}[order['date']] = {v('grossPerformance')} - {v('grossPerformanceAtStartDate')} - ({v('fees')} - {v('feesAtStartDate')})
-            {v('investmentValuesAccumulated')}[order['date']] = {v('totalInvestment')}
-            {v('investmentValuesWithCurrencyEffect')}[order['date']] = {v('investmentValuesWithCurrencyEffect')}.get(order['date'], D(0)) + {v('transactionInvestment')}
-        if idx == {v('indexOfEndOrder')}: break
-    _tgp = {v('grossPerformance')} - {v('grossPerformanceAtStartDate')}
-    _tnp = _tgp - ({v('fees')} - {v('feesAtStartDate')})
-    _twi = {v('sumOfTimeWeightedInvestments')} / {v('totalInvestmentDays')} if {v('totalInvestmentDays')} > 0 else D(0)
-    _npp = _tnp / _twi if _twi > 0 else D(0)
-    _gpp = _tgp / _twi if _twi > 0 else D(0)
-    return dict(hasErrors={v('totalUnits')} > 0 and ({v('initialValue')} is None or {v('unitPriceAtEndDate')} is None),
+        if {_('idx')} > {v('indexOfStartOrder')} and {v('valueOfInvestmentBeforeTransaction')} > 0 and {_('otype')} in {pos_types!r}:
+            {_('_days')} = max(({_('date')}.fromisoformat({_('order')}['date']) - {_('date')}.fromisoformat({_('orders')}[{_('idx')} - 1]['date'])).days, 0)
+            {_('_dd')} = D(str({_('_days')})) if {_('_days')} > 0 else D('0.00000000000001')
+            {v('totalInvestmentDays')} += {_('_dd')}
+            {v('sumOfTimeWeightedInvestments')} += ({v('valueAtStartDate')} - {v('investmentAtStartDate')} + {v('totalInvestmentBeforeTransaction')}) * {_('_dd')}
+        if {_('idx')} > {v('indexOfStartOrder')}:
+            {v('currentValues')}[{_('order')}['date']] = {v('valueOfInvestment')}
+            {v('netPerformanceValues')}[{_('order')}['date']] = {v('grossPerformance')} - {v('grossPerformanceAtStartDate')} - ({v('fees')} - {v('feesAtStartDate')})
+            {v('investmentValuesAccumulated')}[{_('order')}['date']] = {v('totalInvestment')}
+            {v('investmentValuesWithCurrencyEffect')}[{_('order')}['date']] = {v('investmentValuesWithCurrencyEffect')}.get({_('order')}['date'], D(0)) + {v('transactionInvestment')}
+        if {_('idx')} == {v('indexOfEndOrder')}: break
+    {_('_tgp')} = {v('grossPerformance')} - {v('grossPerformanceAtStartDate')}
+    {_('_tnp')} = {_('_tgp')} - ({v('fees')} - {v('feesAtStartDate')})
+    {_('_twi')} = {v('sumOfTimeWeightedInvestments')} / {v('totalInvestmentDays')} if {v('totalInvestmentDays')} > 0 else D(0)
+    {_('_npp')} = {_('_tnp')} / {_('_twi')} if {_('_twi')} > 0 else D(0)
+    {_('_gpp')} = {_('_tgp')} / {_('_twi')} if {_('_twi')} > 0 else D(0)
+    return {_('dict')}(hasErrors={v('totalUnits')} > 0 and ({v('initialValue')} is None or {v('unitPriceAtEndDate')} is None),
         ti={v('totalInvestment')}, td={v('totalDividend')}, tf={v('fees')} - {v('feesAtStartDate')},
-        tl={v('totalLiabilities')}, quantity={v('totalUnits')}, _tnp=_tnp, _tgp=_tgp, _npp=_npp, _gpp=_gpp,
+        tl={v('totalLiabilities')}, quantity={v('totalUnits')}, _tnp={_('_tnp')}, _tgp={_('_tgp')}, _npp={_('_npp')}, _gpp={_('_gpp')},
         ibd={v('investmentValuesWithCurrencyEffect')}, vbd={v('currentValues')},
         npd={v('netPerformanceValues')}, iad={v('investmentValuesAccumulated')},
         iv={v('initialValue')} or D(0),
