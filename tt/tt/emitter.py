@@ -247,6 +247,12 @@ def _sm_loop_calc(cfg: TranslationConfig, ii: str, lines: list[str]) -> None:
     lines.append(f"{ii}{v('totalUnits')} += order['quantity'] * _factor")
     lines.append(f"{ii}{v('valueOfInvestment')} = {v('totalUnits')} * _mp")
 
+    _sm_loop_gross(cfg, ii, lines)
+
+
+def _sm_loop_gross(cfg: TranslationConfig, ii: str, lines: list[str]) -> None:
+    """Gross performance from sells + avg price + reset (inside for loop)."""
+    v = cfg.var
     sell_type = [t for t, f in cfg.activity_factors.items() if f < 0][0]
     lines.append(f"{ii}{v('grossPerformanceFromSell')} = D(0)")
     lines.append(f"{ii}if otype == {sell_type!r}: {v('grossPerformanceFromSell')} = (_up - {v('lastAveragePrice')}) * order['quantity']")
