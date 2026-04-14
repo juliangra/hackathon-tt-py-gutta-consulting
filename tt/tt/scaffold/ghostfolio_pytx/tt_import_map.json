@@ -101,19 +101,5 @@
     "nw": "netWorth",
     "upm": "unitPriceFromMarketData",
     "perf_key": "performance"
-  },
-  "dict_fields": [
-    "date", "type", "quantity", "unitPrice", "fee",
-    "feeInBaseCurrency", "feeInBaseCurrencyWithCurrencyEffect",
-    "unitPriceInBaseCurrency", "unitPriceInBaseCurrencyWithCurrencyEffect",
-    "unitPriceFromMarketData", "itemType",
-    "symbol", "dataSource", "assetSubClass",
-    "includeInTotalAssetValue", "includeInHoldings",
-    "investment", "investmentWithCurrencyEffect",
-    "valueInBaseCurrency", "grossPerformance",
-    "grossPerformanceWithCurrencyEffect", "netPerformance",
-    "timeWeightedInvestment", "timeWeightedInvestmentWithCurrencyEffect",
-    "SymbolProfile"
-  ]
   }
 }
