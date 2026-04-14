@@ -77,6 +77,11 @@ class TranslationConfig:
         """Get an API field name from its short key."""
         return self._data.get("field_names", {}).get(short_key, short_key)
 
+    @property
+    def dict_fields(self) -> set[str]:
+        """Fields accessed as dict keys on activity/order objects."""
+        return set(self._data.get("dict_fields", []))
+
     @staticmethod
     def _camel_to_snake(name: str) -> str:
         result = []

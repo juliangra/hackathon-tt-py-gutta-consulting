@@ -454,8 +454,7 @@ def _translate_member(node: Node, cfg: TranslationConfig) -> pyast.expr:
         return _const(2.220446049250313e-16)
 
     # For dict-like access on activity objects, use .get()
-    # Detect if obj is likely a dict (order, activity, etc.)
-    if _is_dict_context(obj_text, prop_name):
+    if prop_name in cfg.dict_fields:
         if has_optional:
             return _call(_attr(obj_expr, "get"), [_const(prop_name)])
         return pyast.Subscript(
@@ -469,28 +468,6 @@ def _translate_member(node: Node, cfg: TranslationConfig) -> pyast.expr:
     return _attr(obj_expr, _snake(prop_name))
 
 
-def _is_dict_context(obj_text: str, prop_name: str) -> bool:
-    """Heuristic: is this member access on a dict-like object?"""
-    # Activity/order fields that are accessed as dict keys in Python
-    dict_fields = {
-        "date", "type", "quantity", "unitPrice", "fee",
-        "feeInBaseCurrency", "feeInBaseCurrencyWithCurrencyEffect",
-        "unitPriceInBaseCurrency", "unitPriceInBaseCurrencyWithCurrencyEffect",
-        "unitPriceFromMarketData", "itemType",
-        "symbol", "dataSource", "assetSubClass",
-        "includeInTotalAssetValue", "includeInHoldings",
-        "investment", "investmentWithCurrencyEffect",
-        "valueInBaseCurrency", "grossPerformance",
-        "grossPerformanceWithCurrencyEffect", "netPerformance",
-        "timeWeightedInvestment", "timeWeightedInvestmentWithCurrencyEffect",
-    }
-    # Object-like TS properties that map to dict access
-    if prop_name in dict_fields:
-        return True
-    # SymbolProfile access -> nested dict
-    if prop_name == "SymbolProfile":
-        return True
-    return False
 
 
 def _translate_subscript(node: Node, cfg: TranslationConfig) -> pyast.expr:
