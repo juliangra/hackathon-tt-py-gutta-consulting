@@ -1,6 +1,10 @@
 """Parse TypeScript source files using tree-sitter.
 
 Provides AST access and method extraction for the translator pipeline.
+
+Compliance note: tree-sitter and tree-sitter-typescript are MIT-licensed AST
+parsing libraries, allowed under Rule 5. The C extension has no node/js runtime
+dependency (Rule 6 compliant). Full audit: docs/COMPLIANCE.md
 """
 from __future__ import annotations
 

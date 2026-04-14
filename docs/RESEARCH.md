@@ -9,6 +9,8 @@ Research findings for building the TypeScript-to-Python Translation Tool (TT).
 
 This confirms `tree-sitter` + `tree-sitter-typescript` are allowed (Python bindings to a C library, installed via pip, no Node.js involved).
 
+See [COMPLIANCE.md](./COMPLIANCE.md) for the full compliance audit: licensing (both MIT), runtime evidence (no node/js, no subprocess), per-rule verdicts (Rules 1/5/6/9), and rule-checker impact analysis.
+
 ## Parsing: tree-sitter
 
 **tree-sitter is the only viable Python-native TypeScript parser.** Alternatives (pyjsparser, slimit, esprima-python) only handle ES5 JavaScript, not TypeScript syntax (no type annotations, interfaces, enums, etc.).
