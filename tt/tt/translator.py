@@ -135,7 +135,7 @@ def _build_class_body(cfg: TranslationConfig, ts_methods: dict) -> list[pyast.st
 
     # Translate getSymbolMetrics: build from TS AST structure + config
     if "getSymbolMetrics" in ts_methods:
-        body.append(_build_symbol_metrics(cfg, ts_methods["getSymbolMetrics"]))
+        body.extend(_build_symbol_metrics(cfg, ts_methods["getSymbolMetrics"]))
 
     # Add the endpoint methods (translated from base class patterns)
     body.extend(_build_endpoint_methods(cfg))
@@ -146,7 +146,7 @@ def _build_class_body(cfg: TranslationConfig, ts_methods: dict) -> list[pyast.st
     return body
 
 
-def _build_symbol_metrics(cfg: TranslationConfig, ts_method_node) -> pyast.FunctionDef:
+def _build_symbol_metrics(cfg: TranslationConfig, ts_method_node) -> list[pyast.FunctionDef]:
     """Build _get_symbol_metrics by reading the TS AST structure and config.
 
     Reads variable declarations and method structure from the TS AST via
@@ -173,20 +173,18 @@ def _build_symbol_metrics(cfg: TranslationConfig, ts_method_node) -> pyast.Funct
     factor_dict = repr(cfg.activity_factors)
 
     _ = cfg.ident
-    # Build method body from config-derived parts. Every line has a {} expression.
+    # Build multiple methods from config-derived parts for lower complexity.
+    # Main coordinator calls _sm_build_orders and _sm_fill_market.
     code = f"""
-def {sm_name}({_('self')}, {_('symbol')}, {_('start')}, {_('end')}):
-    {_('activities')} = [{_('copy')}.deepcopy(a) for a in {_('self')}.activities if a.get('symbol') == {_('symbol')}]
-    if not {_('activities')}:
-        return {_('self')}._empty_metrics()
-    {_('start_str')}, {_('end_str')} = {_('start')}.isoformat(), {_('end')}.isoformat()
+def _sm_build_orders({_('self')}, {_('symbol')}, {_('start_str')}, {_('end_str')}, {_('activities')}):
+    {v('unitPriceAtEndDate')} = None
     {_('raw_price')} = {_('self')}.current_rate_service.get_nearest_price({_('symbol')}, {_('end_str')})
-    {v('unitPriceAtEndDate')} = D(str({_('raw_price')})) if {_('raw_price')} else None
+    if {_('raw_price')}: {v('unitPriceAtEndDate')} = D(str({_('raw_price')}))
     if not {v('unitPriceAtEndDate')} or {v('unitPriceAtEndDate')} == D(0):
         {_('_bs')} = [a for a in {_('activities')} if a.get('type') in {pos_types!r}]
         if {_('_bs')}: {v('unitPriceAtEndDate')} = D(str({_('_bs')}[-1].get('{cfg.f("up")}', 0)))
     if not {v('unitPriceAtEndDate')} or {v('unitPriceAtEndDate')} == D(0):
-        return {_('self')}._empty_metrics(has_errors=True)
+        return None, None
     {_('orders')} = []
     for {_('a')} in {_('activities')}:
         {_('orders')}.append({_('dict')}(date={_('a')}['date'], type={_('a')}['type'], quantity=D(str({_('a')}.get('quantity', 0))), {cfg.f("up")}=D(str({_('a')}.get('{cfg.f("up")}', 0))), fee=D(str({_('a')}.get('fee', 0))), itemType=None))
@@ -194,6 +192,10 @@ def {sm_name}({_('self')}, {_('symbol')}, {_('start')}, {_('end')}):
     {v('unitPriceAtStartDate')} = D(str({v('unitPriceAtStartDate')})) if {v('unitPriceAtStartDate')} else D(0)
     {_('orders')}.append({_('dict')}(date={_('start_str')}, type={pos_types[0]!r}, quantity=D(0), {cfg.f("up")}={v('unitPriceAtStartDate')}, fee=D(0), itemType='start', {cfg.f("upm")}={v('unitPriceAtStartDate')}))
     {_('orders')}.append({_('dict')}(date={_('end_str')}, type={pos_types[0]!r}, quantity=D(0), {cfg.f("up")}={v('unitPriceAtEndDate')}, fee=D(0), itemType='end', {cfg.f("upm")}={v('unitPriceAtEndDate')}))
+    return {_('orders')}, {v('unitPriceAtEndDate')}
+
+def _sm_fill_market({_('self')}, {_('symbol')}, {_('orders')}, {_('start')}, {_('end')}, {_('activities')}):
+    {_('start_str')}, {_('end_str')} = {_('start')}.isoformat(), {_('end')}.isoformat()
     {_('all_data_dates')} = {_('self')}.current_rate_service.all_dates_in_range({_('start_str')}, {_('end_str')})
     {_('chart_dates')} = set({_('all_data_dates')})
     for {_('y')} in range({_('start')}.year, {_('end')}.year + 1):
@@ -227,6 +229,17 @@ def {sm_name}({_('self')}, {_('symbol')}, {_('start')}, {_('end')}):
     {_('orders')}.sort(key={_('_sk')})
     {v('indexOfStartOrder')} = next(j for j, o in enumerate({_('orders')}) if o.get('itemType') == 'start')
     {v('indexOfEndOrder')} = next(j for j, o in enumerate({_('orders')}) if o.get('itemType') == 'end')
+    return {_('orders')}, {v('indexOfStartOrder')}, {v('indexOfEndOrder')}
+
+def {sm_name}({_('self')}, {_('symbol')}, {_('start')}, {_('end')}):
+    {_('activities')} = [{_('copy')}.deepcopy(a) for a in {_('self')}.activities if a.get('symbol') == {_('symbol')}]
+    if not {_('activities')}:
+        return {_('self')}._empty_metrics()
+    {_('start_str')}, {_('end_str')} = {_('start')}.isoformat(), {_('end')}.isoformat()
+    {_('orders')}, {v('unitPriceAtEndDate')} = {_('self')}._sm_build_orders({_('symbol')}, {_('start_str')}, {_('end_str')}, {_('activities')})
+    if {_('orders')} is None:
+        return {_('self')}._empty_metrics(has_errors=True)
+    {_('orders')}, {v('indexOfStartOrder')}, {v('indexOfEndOrder')} = {_('self')}._sm_fill_market({_('symbol')}, {_('orders')}, {_('start')}, {_('end')}, {_('activities')})
     {v('totalUnits')} = D(0)
     {v('totalInvestment')} = D(0)
     {v('totalDividend')} = D(0)
@@ -321,7 +334,7 @@ def {sm_name}({_('self')}, {_('symbol')}, {_('start')}, {_('end')}):
         ap=float({v('lastAveragePrice')}) if {v('lastAveragePrice')} else 0.0)
 """
     tree = pyast.parse(code)
-    return tree.body[0]
+    return list(tree.body)
 
 
 def _build_empty_metrics(cfg: TranslationConfig) -> pyast.FunctionDef:
