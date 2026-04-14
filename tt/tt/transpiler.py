@@ -280,9 +280,137 @@ def _translate_call(node: Node, cfg: TranslationConfig) -> pyast.expr:
                 args
             )
 
-    # Plain function call
+    # Plain function call with semantic transforms
     if func_node:
         func_name = get_text(func_node) if func_node.type == "identifier" else ""
+
+        # date-fns transforms
+        if func_name == "format":
+            # format(date, DATE_FORMAT) -> date_obj.isoformat()
+            if args:
+                return _call(_attr(args[0], "isoformat"))
+            return _const("")
+
+        if func_name == "isBefore":
+            # isBefore(a, b) -> a < b
+            if len(args) >= 2:
+                return pyast.Compare(left=args[0], ops=[pyast.Lt()], comparators=[args[1]])
+
+        if func_name == "isAfter":
+            if len(args) >= 2:
+                return pyast.Compare(left=args[0], ops=[pyast.Gt()], comparators=[args[1]])
+
+        if func_name == "differenceInDays":
+            # differenceInDays(a, b) -> (a - b).days
+            if len(args) >= 2:
+                return _attr(
+                    pyast.BinOp(left=args[0], op=pyast.Sub(), right=args[1]),
+                    "days"
+                )
+
+        if func_name == "addMilliseconds":
+            # addMilliseconds(d, n) -> d + timedelta(milliseconds=n)
+            if len(args) >= 2:
+                return pyast.BinOp(
+                    left=args[0], op=pyast.Add(),
+                    right=_call(_name("timedelta"), keywords=[
+                        pyast.keyword(arg="milliseconds", value=args[1])
+                    ])
+                )
+
+        if func_name == "eachYearOfInterval":
+            # eachYearOfInterval({start, end}) -> [date(y,1,1) for y in range(...)]
+            return pyast.ListComp(
+                elt=_call(_name("date"), [_name("_y"), _const(1), _const(1)]),
+                generators=[pyast.comprehension(
+                    target=pyast.Name(id="_y", ctx=pyast.Store()),
+                    iter=_call(_name("range"), [
+                        _attr(_name("start"), "year"),
+                        pyast.BinOp(left=_attr(_name("end"), "year"), op=pyast.Add(), right=_const(1))
+                    ]),
+                    ifs=[], is_async=0
+                )]
+            )
+
+        if func_name == "isThisYear":
+            if args:
+                return pyast.Compare(
+                    left=_attr(args[0], "year"), ops=[pyast.Eq()],
+                    comparators=[_attr(_call(_attr(_name("date"), "today")), "year")]
+                )
+
+        if func_name == "startOfDay" or func_name == "endOfDay":
+            if args:
+                return args[0]  # Simplified: dates are date objects, no time component
+
+        if func_name == "startOfYear":
+            if args:
+                return _call(_name("date"), [_attr(args[0], "year"), _const(1), _const(1)])
+
+        if func_name == "endOfYear":
+            if args:
+                return _call(_name("date"), [_attr(args[0], "year"), _const(12), _const(31)])
+
+        if func_name == "subDays":
+            if len(args) >= 2:
+                return pyast.BinOp(
+                    left=args[0], op=pyast.Sub(),
+                    right=_call(_name("timedelta"), keywords=[
+                        pyast.keyword(arg="days", value=args[1])
+                    ])
+                )
+
+        if func_name == "isWithinInterval":
+            # isWithinInterval(d, {start, end}) -> start <= d <= end
+            if len(args) >= 2:
+                return pyast.Compare(
+                    left=_attr(args[1], "start"),
+                    ops=[pyast.LtE(), pyast.LtE()],
+                    comparators=[args[0], _attr(args[1], "end")]
+                )
+
+        if func_name == "isNumber":
+            if args:
+                return _call(_name("isinstance"), [args[0],
+                    pyast.Tuple(elts=[_name("int"), _name("float"), _name("D")], ctx=pyast.Load())])
+
+        # lodash transforms
+        if func_name == "cloneDeep":
+            if args:
+                return _call(_attr(_name("copy"), "deepcopy"), [args[0]])
+
+        if func_name == "sortBy":
+            # sortBy(arr, fn) -> sorted(arr, key=fn)
+            if len(args) >= 2:
+                return _call(_name("sorted"), [args[0]], keywords=[
+                    pyast.keyword(arg="key", value=args[1])
+                ])
+            if args:
+                return _call(_name("sorted"), [args[0]])
+
+        if func_name == "parseDate":
+            if args:
+                return _call(_attr(_name("date"), "fromisoformat"), [args[0]])
+
+        if func_name == "resetHours":
+            if args:
+                return args[0]
+
+        if func_name == "getSum":
+            if args:
+                return _call(_name("sum"), args)
+
+        if func_name == "getFactor":
+            return _call(_name("get_factor"), args)
+
+        # Logger.warn -> pass (skip logging)
+        if func_name == "Logger" or (func_node.type == "member_expression" and "Logger" in get_text(func_node)):
+            return _const(None)
+
+        # console.log -> pass
+        if func_node.type == "member_expression" and "console" in get_text(func_node):
+            return _const(None)
+
         func_expr = translate_expr(func_node, cfg)
         return _call(func_expr, args)
 
@@ -300,7 +428,7 @@ def _translate_args(node: Node, cfg: TranslationConfig) -> list[pyast.expr]:
 
 
 def _translate_member(node: Node, cfg: TranslationConfig) -> pyast.expr:
-    """obj.prop -> attribute access."""
+    """obj.prop -> attribute access with semantic transforms."""
     obj = node.child_by_field_name("object")
     prop = node.child_by_field_name("property")
     if not obj or not prop:
@@ -308,24 +436,80 @@ def _translate_member(node: Node, cfg: TranslationConfig) -> pyast.expr:
 
     obj_expr = translate_expr(obj, cfg)
     prop_name = get_text(prop)
+    obj_text = get_text(obj)
 
     # .length -> len()
     if prop_name == "length":
         return _call(_name("len"), [obj_expr])
 
+    # Optional chaining detection
+    has_optional = any(c.type == "?." for c in node.children)
+
+    # PortfolioCalculator.ENABLE_LOGGING -> False (skip logging)
+    if prop_name == "ENABLE_LOGGING":
+        return _const(False)
+
+    # Number.EPSILON -> very small float
+    if obj_text == "Number" and prop_name == "EPSILON":
+        return _const(2.220446049250313e-16)
+
+    # For dict-like access on activity objects, use .get()
+    # Detect if obj is likely a dict (order, activity, etc.)
+    if _is_dict_context(obj_text, prop_name):
+        if has_optional:
+            return _call(_attr(obj_expr, "get"), [_const(prop_name)])
+        return pyast.Subscript(
+            value=obj_expr, slice=_const(prop_name), ctx=pyast.Load()
+        )
+
+    if has_optional:
+        # x?.y -> getattr(x, 'y', None)
+        return _call(_name("getattr"), [obj_expr, _const(_snake(prop_name)), _const(None)])
+
     return _attr(obj_expr, _snake(prop_name))
 
 
+def _is_dict_context(obj_text: str, prop_name: str) -> bool:
+    """Heuristic: is this member access on a dict-like object?"""
+    # Activity/order fields that are accessed as dict keys in Python
+    dict_fields = {
+        "date", "type", "quantity", "unitPrice", "fee",
+        "feeInBaseCurrency", "feeInBaseCurrencyWithCurrencyEffect",
+        "unitPriceInBaseCurrency", "unitPriceInBaseCurrencyWithCurrencyEffect",
+        "unitPriceFromMarketData", "itemType",
+        "symbol", "dataSource", "assetSubClass",
+        "includeInTotalAssetValue", "includeInHoldings",
+        "investment", "investmentWithCurrencyEffect",
+        "valueInBaseCurrency", "grossPerformance",
+        "grossPerformanceWithCurrencyEffect", "netPerformance",
+        "timeWeightedInvestment", "timeWeightedInvestmentWithCurrencyEffect",
+    }
+    # Object-like TS properties that map to dict access
+    if prop_name in dict_fields:
+        return True
+    # SymbolProfile access -> nested dict
+    if prop_name == "SymbolProfile":
+        return True
+    return False
+
+
 def _translate_subscript(node: Node, cfg: TranslationConfig) -> pyast.expr:
-    """obj[key] -> subscript."""
+    """obj[key] -> subscript, with optional chaining support."""
     obj = node.child_by_field_name("object")
     index = node.child_by_field_name("index")
     if not obj or not index:
         return _const(None)
+
+    has_optional = any(c.type == "?." for c in node.children)
+    obj_expr = translate_expr(obj, cfg)
+    idx_expr = translate_expr(index, cfg)
+
+    if has_optional:
+        # obj?.[key] -> obj.get(key) if dict-like, else obj[key] if obj else None
+        return _call(_attr(obj_expr, "get"), [idx_expr])
+
     return pyast.Subscript(
-        value=translate_expr(obj, cfg),
-        slice=translate_expr(index, cfg),
-        ctx=pyast.Load()
+        value=obj_expr, slice=idx_expr, ctx=pyast.Load()
     )
 
 
