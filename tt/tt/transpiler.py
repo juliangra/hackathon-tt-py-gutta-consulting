@@ -56,103 +56,82 @@ def _attr(obj, attr_name: str) -> pyast.Attribute:
 
 def translate_expr(node: Node, cfg: TranslationConfig) -> pyast.expr:
     """Translate a TS expression node to a Python ast expression."""
-    t = node.type
-
-    if t == "identifier":
-        raw = get_text(node)
-        if raw == "undefined":
-            return _const(None)
-        if raw == "this":
-            return _name("self")
-        return _name(cfg.var(raw))
-
-    if t == "this":
-        return _name("self")
-
-    if t == "number":
-        txt = get_text(node)
-        if "." in txt:
-            return _const(float(txt))
-        return _const(int(txt))
-
-    if t == "string" or t == "string_fragment":
-        # Extract string content (strip quotes if present)
-        txt = get_text(node)
-        if txt.startswith("'") or txt.startswith('"'):
-            txt = txt[1:-1]
-        return _const(txt)
-
-    if t in ("true", "false"):
-        return _const(t == "true")
-
-    if t == "null" or t == "undefined":
-        return _const(None)
-
-    if t == "new_expression":
-        return _translate_new(node, cfg)
-
-    if t == "call_expression":
-        return _translate_call(node, cfg)
-
-    if t == "member_expression":
-        return _translate_member(node, cfg)
-
-    if t == "subscript_expression":
-        return _translate_subscript(node, cfg)
-
-    if t == "binary_expression":
-        return _translate_binary(node, cfg)
-
-    if t == "unary_expression":
-        return _translate_unary(node, cfg)
-
-    if t == "ternary_expression":
-        return _translate_ternary(node, cfg)
-
-    if t == "assignment_expression":
-        # In expression context (rare), return the value
-        right = node.child_by_field_name("right")
-        if right:
-            return translate_expr(right, cfg)
-        return _const(None)
-
-    if t == "parenthesized_expression":
-        for child in node.children:
-            if child.type not in ("(", ")"):
-                return translate_expr(child, cfg)
-        return _const(None)
-
-    if t == "object":
-        return _translate_object_literal(node, cfg)
-
-    if t == "array":
-        elts = []
-        for child in node.children:
-            if child.type not in ("[", "]", ","):
-                elts.append(translate_expr(child, cfg))
-        return pyast.List(elts=elts, ctx=pyast.Load())
-
-    if t == "template_string":
-        # Simplify: just return as a string
-        return _const(get_text(node).strip("`"))
-
-    if t == "spread_element":
-        for child in node.children:
-            if child.type != "...":
-                return pyast.Starred(value=translate_expr(child, cfg), ctx=pyast.Load())
-
-    if t == "arrow_function":
-        return _translate_arrow(node, cfg)
-
-    if t == "update_expression":
-        return _translate_update(node, cfg)
-
-    if t == "as_expression":
-        # Type cast: just return the expression
-        return translate_expr(node.children[0], cfg)
-
-    # Fallback: try to parse as a Python expression
+    _DISPATCH = {
+        "identifier": _translate_identifier,
+        "this": lambda n, c: _name("self"),
+        "number": _translate_number,
+        "string": _translate_string,
+        "string_fragment": _translate_string,
+        "true": lambda n, c: _const(True),
+        "false": lambda n, c: _const(False),
+        "null": lambda n, c: _const(None),
+        "undefined": lambda n, c: _const(None),
+        "new_expression": _translate_new,
+        "call_expression": _translate_call,
+        "member_expression": _translate_member,
+        "subscript_expression": _translate_subscript,
+        "binary_expression": _translate_binary,
+        "unary_expression": _translate_unary,
+        "ternary_expression": _translate_ternary,
+        "object": _translate_object_literal,
+        "array": _translate_array,
+        "arrow_function": _translate_arrow,
+        "update_expression": _translate_update,
+        "template_string": lambda n, c: _const(get_text(n).strip("`")),
+        "spread_element": _translate_spread,
+        "as_expression": lambda n, c: translate_expr(n.children[0], c),
+        "parenthesized_expression": _translate_parens,
+        "assignment_expression": _translate_assign_expr,
+    }
+    handler = _DISPATCH.get(node.type)
+    if handler:
+        return handler(node, cfg)
     return _const(None)
+
+
+def _translate_identifier(node: Node, cfg: TranslationConfig) -> pyast.expr:
+    raw = get_text(node)
+    if raw == "undefined":
+        return _const(None)
+    if raw == "this":
+        return _name("self")
+    return _name(cfg.var(raw))
+
+
+def _translate_number(node: Node, cfg: TranslationConfig) -> pyast.expr:
+    txt = get_text(node)
+    return _const(float(txt) if "." in txt else int(txt))
+
+
+def _translate_string(node: Node, cfg: TranslationConfig) -> pyast.expr:
+    txt = get_text(node)
+    if txt.startswith("'") or txt.startswith('"'):
+        txt = txt[1:-1]
+    return _const(txt)
+
+
+def _translate_array(node: Node, cfg: TranslationConfig) -> pyast.expr:
+    elts = [translate_expr(c, cfg) for c in node.children if c.type not in ("[", "]", ",")]
+    return pyast.List(elts=elts, ctx=pyast.Load())
+
+
+def _translate_spread(node: Node, cfg: TranslationConfig) -> pyast.expr:
+    for child in node.children:
+        if child.type != "...":
+            return pyast.Starred(value=translate_expr(child, cfg), ctx=pyast.Load())
+    return _const(None)
+
+
+def _translate_parens(node: Node, cfg: TranslationConfig) -> pyast.expr:
+    for child in node.children:
+        if child.type not in ("(", ")"):
+            return translate_expr(child, cfg)
+    return _const(None)
+
+
+def _translate_assign_expr(node: Node, cfg: TranslationConfig) -> pyast.expr:
+    right = node.child_by_field_name("right")
+    return translate_expr(right, cfg) if right else _const(None)
 
 
 def _translate_new(node: Node, cfg: TranslationConfig) -> pyast.expr:
@@ -189,15 +168,22 @@ def _translate_new(node: Node, cfg: TranslationConfig) -> pyast.expr:
 
 
 def _translate_call(node: Node, cfg: TranslationConfig) -> pyast.expr:
-    """Translate function/method calls, including Big.js chains."""
+    """Dispatch: method call or plain function call."""
     func_node = node.child_by_field_name("function")
     args_node = node.child_by_field_name("arguments")
     args = _translate_args(args_node, cfg) if args_node else []
 
     if func_node and func_node.type == "member_expression":
-        obj_node = func_node.child_by_field_name("object")
-        prop_node = func_node.child_by_field_name("property")
-        if prop_node:
+        return _translate_method_call(func_node, args, cfg)
+
+    return _translate_func_call(func_node, args, cfg)
+
+
+def _translate_method_call(func_node: Node, args: list, cfg: TranslationConfig) -> pyast.expr:
+    """Translate obj.method(args) calls: Big.js, array, etc."""
+    obj_node = func_node.child_by_field_name("object")
+    prop_node = func_node.child_by_field_name("property")
+    if prop_node:
             method_name = get_text(prop_node)
 
             # Big.js arithmetic: .plus(x) -> obj + x
@@ -279,142 +265,91 @@ def _translate_call(node: Node, cfg: TranslationConfig) -> pyast.expr:
                 _attr(translate_expr(obj_node, cfg), _snake(method_name)),
                 args
             )
-
-    # Plain function call with semantic transforms
-    if func_node:
-        func_name = get_text(func_node) if func_node.type == "identifier" else ""
-
-        # date-fns transforms
-        if func_name == "format":
-            # format(date, DATE_FORMAT) -> date_obj.isoformat()
-            if args:
-                return _call(_attr(args[0], "isoformat"))
-            return _const("")
-
-        if func_name == "isBefore":
-            # isBefore(a, b) -> a < b
-            if len(args) >= 2:
-                return pyast.Compare(left=args[0], ops=[pyast.Lt()], comparators=[args[1]])
-
-        if func_name == "isAfter":
-            if len(args) >= 2:
-                return pyast.Compare(left=args[0], ops=[pyast.Gt()], comparators=[args[1]])
-
-        if func_name == "differenceInDays":
-            # differenceInDays(a, b) -> (a - b).days
-            if len(args) >= 2:
-                return _attr(
-                    pyast.BinOp(left=args[0], op=pyast.Sub(), right=args[1]),
-                    "days"
-                )
-
-        if func_name == "addMilliseconds":
-            # addMilliseconds(d, n) -> d + timedelta(milliseconds=n)
-            if len(args) >= 2:
-                return pyast.BinOp(
-                    left=args[0], op=pyast.Add(),
-                    right=_call(_name("timedelta"), keywords=[
-                        pyast.keyword(arg="milliseconds", value=args[1])
-                    ])
-                )
-
-        if func_name == "eachYearOfInterval":
-            # eachYearOfInterval({start, end}) -> [date(y,1,1) for y in range(...)]
-            return pyast.ListComp(
-                elt=_call(_name("date"), [_name("_y"), _const(1), _const(1)]),
-                generators=[pyast.comprehension(
-                    target=pyast.Name(id="_y", ctx=pyast.Store()),
-                    iter=_call(_name("range"), [
-                        _attr(_name("start"), "year"),
-                        pyast.BinOp(left=_attr(_name("end"), "year"), op=pyast.Add(), right=_const(1))
-                    ]),
-                    ifs=[], is_async=0
-                )]
-            )
-
-        if func_name == "isThisYear":
-            if args:
-                return pyast.Compare(
-                    left=_attr(args[0], "year"), ops=[pyast.Eq()],
-                    comparators=[_attr(_call(_attr(_name("date"), "today")), "year")]
-                )
-
-        if func_name == "startOfDay" or func_name == "endOfDay":
-            if args:
-                return args[0]  # Simplified: dates are date objects, no time component
-
-        if func_name == "startOfYear":
-            if args:
-                return _call(_name("date"), [_attr(args[0], "year"), _const(1), _const(1)])
-
-        if func_name == "endOfYear":
-            if args:
-                return _call(_name("date"), [_attr(args[0], "year"), _const(12), _const(31)])
-
-        if func_name == "subDays":
-            if len(args) >= 2:
-                return pyast.BinOp(
-                    left=args[0], op=pyast.Sub(),
-                    right=_call(_name("timedelta"), keywords=[
-                        pyast.keyword(arg="days", value=args[1])
-                    ])
-                )
-
-        if func_name == "isWithinInterval":
-            # isWithinInterval(d, {start, end}) -> start <= d <= end
-            if len(args) >= 2:
-                return pyast.Compare(
-                    left=_attr(args[1], "start"),
-                    ops=[pyast.LtE(), pyast.LtE()],
-                    comparators=[args[0], _attr(args[1], "end")]
-                )
-
-        if func_name == "isNumber":
-            if args:
-                return _call(_name("isinstance"), [args[0],
-                    pyast.Tuple(elts=[_name("int"), _name("float"), _name("D")], ctx=pyast.Load())])
-
-        # lodash transforms
-        if func_name == "cloneDeep":
-            if args:
-                return _call(_attr(_name("copy"), "deepcopy"), [args[0]])
-
-        if func_name == "sortBy":
-            # sortBy(arr, fn) -> sorted(arr, key=fn)
-            if len(args) >= 2:
-                return _call(_name("sorted"), [args[0]], keywords=[
-                    pyast.keyword(arg="key", value=args[1])
-                ])
-            if args:
-                return _call(_name("sorted"), [args[0]])
-
-        if func_name == "parseDate":
-            if args:
-                return _call(_attr(_name("date"), "fromisoformat"), [args[0]])
-
-        if func_name == "resetHours":
-            if args:
-                return args[0]
-
-        if func_name == "getSum":
-            if args:
-                return _call(_name("sum"), args)
-
-        if func_name == "getFactor":
-            return _call(_name("get_factor"), args)
-
-        # Logger.warn -> pass (skip logging)
-        if func_name == "Logger" or (func_node.type == "member_expression" and "Logger" in get_text(func_node)):
-            return _const(None)
-
-        # console.log -> pass
-        if func_node.type == "member_expression" and "console" in get_text(func_node):
-            return _const(None)
-
-        func_expr = translate_expr(func_node, cfg)
-        return _call(func_expr, args)
-
     return _const(None)
+
+
+def _translate_func_call(func_node, args: list, cfg: TranslationConfig) -> pyast.expr:
+    """Translate plain function calls with semantic transforms."""
+    if not func_node:
+        return _const(None)
+    func_name = get_text(func_node) if func_node.type == "identifier" else ""
+
+    # Try date-fns, then lodash, then other known funcs
+    result = _try_date_fns(func_name, args)
+    if result is not None:
+        return result
+    result = _try_lodash(func_name, args, func_node, cfg)
+    if result is not None:
+        return result
+
+    func_expr = translate_expr(func_node, cfg)
+    return _call(func_expr, args)
+
+
+def _try_date_fns(func_name: str, args: list) -> pyast.expr | None:
+    """Handle date-fns function calls."""
+    if func_name == "format":
+        return _call(_attr(args[0], "isoformat")) if args else _const("")
+    if func_name == "isBefore" and len(args) >= 2:
+        return pyast.Compare(left=args[0], ops=[pyast.Lt()], comparators=[args[1]])
+    if func_name == "isAfter" and len(args) >= 2:
+        return pyast.Compare(left=args[0], ops=[pyast.Gt()], comparators=[args[1]])
+    if func_name == "differenceInDays" and len(args) >= 2:
+        return _attr(pyast.BinOp(left=args[0], op=pyast.Sub(), right=args[1]), "days")
+    if func_name == "addMilliseconds" and len(args) >= 2:
+        return pyast.BinOp(left=args[0], op=pyast.Add(),
+            right=_call(_name("timedelta"), keywords=[pyast.keyword(arg="milliseconds", value=args[1])]))
+    if func_name == "eachYearOfInterval":
+        return pyast.ListComp(
+            elt=_call(_name("date"), [_name("_y"), _const(1), _const(1)]),
+            generators=[pyast.comprehension(
+                target=pyast.Name(id="_y", ctx=pyast.Store()),
+                iter=_call(_name("range"), [_attr(_name("start"), "year"),
+                    pyast.BinOp(left=_attr(_name("end"), "year"), op=pyast.Add(), right=_const(1))]),
+                ifs=[], is_async=0)])
+    if func_name == "isThisYear" and args:
+        return pyast.Compare(left=_attr(args[0], "year"), ops=[pyast.Eq()],
+            comparators=[_attr(_call(_attr(_name("date"), "today")), "year")])
+    if func_name in ("startOfDay", "endOfDay") and args:
+        return args[0]
+    if func_name == "startOfYear" and args:
+        return _call(_name("date"), [_attr(args[0], "year"), _const(1), _const(1)])
+    if func_name == "endOfYear" and args:
+        return _call(_name("date"), [_attr(args[0], "year"), _const(12), _const(31)])
+    if func_name == "subDays" and len(args) >= 2:
+        return pyast.BinOp(left=args[0], op=pyast.Sub(),
+            right=_call(_name("timedelta"), keywords=[pyast.keyword(arg="days", value=args[1])]))
+    if func_name == "isWithinInterval" and len(args) >= 2:
+        return pyast.Compare(left=_attr(args[1], "start"),
+            ops=[pyast.LtE(), pyast.LtE()], comparators=[args[0], _attr(args[1], "end")])
+    if func_name == "isNumber" and args:
+        return _call(_name("isinstance"), [args[0],
+            pyast.Tuple(elts=[_name("int"), _name("float"), _name("D")], ctx=pyast.Load())])
+    return None
+
+
+def _try_lodash(func_name: str, args: list, func_node, cfg: TranslationConfig) -> pyast.expr | None:
+    """Handle lodash and other known function calls."""
+    if func_name == "cloneDeep" and args:
+        return _call(_attr(_name("copy"), "deepcopy"), [args[0]])
+    if func_name == "sortBy":
+        if len(args) >= 2:
+            return _call(_name("sorted"), [args[0]], keywords=[pyast.keyword(arg="key", value=args[1])])
+        if args:
+            return _call(_name("sorted"), [args[0]])
+    if func_name == "parseDate" and args:
+        return _call(_attr(_name("date"), "fromisoformat"), [args[0]])
+    if func_name in ("resetHours",) and args:
+        return args[0]
+    if func_name == "getSum" and args:
+        return _call(_name("sum"), args)
+    if func_name == "getFactor":
+        return _call(_name("get_factor"), args)
+    # Skip logging
+    full_text = get_text(func_node) if func_node else ""
+    if "Logger" in full_text or "console" in full_text:
+        return _const(None)
+    return None
 
 
 def _translate_args(node: Node, cfg: TranslationConfig) -> list[pyast.expr]:
@@ -490,64 +425,48 @@ def _translate_subscript(node: Node, cfg: TranslationConfig) -> pyast.expr:
     )
 
 
+_COMPARE_OPS = {
+    "===": pyast.Eq, "==": pyast.Eq, "!==": pyast.NotEq, "!=": pyast.NotEq,
+    ">": pyast.Gt, "<": pyast.Lt, ">=": pyast.GtE, "<=": pyast.LtE,
+}
+_ARITH_OPS = {
+    "+": pyast.Add, "-": pyast.Sub, "*": pyast.Mult, "/": pyast.Div, "%": pyast.Mod,
+}
+_ALL_OP_TYPES = set(list(_COMPARE_OPS) + list(_ARITH_OPS) + ["&&", "||", "??", "instanceof", "in"])
+
+
 def _translate_binary(node: Node, cfg: TranslationConfig) -> pyast.expr:
-    """Binary operators."""
+    """Binary operators via lookup tables."""
     left = node.child_by_field_name("left")
     right = node.child_by_field_name("right")
-    op_node = node.child_by_field_name("operator")
     if not left or not right:
         return _const(None)
 
+    op_node = node.child_by_field_name("operator")
     op_text = get_text(op_node) if op_node else ""
-    # Find the operator token in children
     if not op_text:
         for child in node.children:
-            if child.type in ("===", "!==", "==", "!=", ">", "<", ">=", "<=",
-                              "&&", "||", "+", "-", "*", "/", "%", "??",
-                              "instanceof", "in"):
+            if child.type in _ALL_OP_TYPES:
                 op_text = child.type
                 break
 
     left_expr = translate_expr(left, cfg)
     right_expr = translate_expr(right, cfg)
 
-    # Comparison operators
-    if op_text in ("===", "=="):
-        return pyast.Compare(left=left_expr, ops=[pyast.Eq()], comparators=[right_expr])
-    if op_text in ("!==", "!="):
-        return pyast.Compare(left=left_expr, ops=[pyast.NotEq()], comparators=[right_expr])
-    if op_text == ">":
-        return pyast.Compare(left=left_expr, ops=[pyast.Gt()], comparators=[right_expr])
-    if op_text == "<":
-        return pyast.Compare(left=left_expr, ops=[pyast.Lt()], comparators=[right_expr])
-    if op_text == ">=":
-        return pyast.Compare(left=left_expr, ops=[pyast.GtE()], comparators=[right_expr])
-    if op_text == "<=":
-        return pyast.Compare(left=left_expr, ops=[pyast.LtE()], comparators=[right_expr])
-
-    # Boolean operators
+    if op_text in _COMPARE_OPS:
+        return pyast.Compare(left=left_expr, ops=[_COMPARE_OPS[op_text]()], comparators=[right_expr])
     if op_text == "&&":
         return pyast.BoolOp(op=pyast.And(), values=[left_expr, right_expr])
     if op_text == "||":
         return pyast.BoolOp(op=pyast.Or(), values=[left_expr, right_expr])
-
-    # Nullish coalescing: a ?? b -> a if a is not None else b
     if op_text == "??":
         return pyast.IfExp(
             test=pyast.Compare(left=left_expr, ops=[pyast.IsNot()], comparators=[_const(None)]),
-            body=left_expr,
-            orelse=right_expr
-        )
-
-    # Arithmetic
-    op_map = {"+": pyast.Add, "-": pyast.Sub, "*": pyast.Mult,
-              "/": pyast.Div, "%": pyast.Mod}
-    if op_text in op_map:
-        return pyast.BinOp(left=left_expr, op=op_map[op_text](), right=right_expr)
-
+            body=left_expr, orelse=right_expr)
+    if op_text in _ARITH_OPS:
+        return pyast.BinOp(left=left_expr, op=_ARITH_OPS[op_text](), right=right_expr)
     if op_text == "instanceof":
         return _call(_name("isinstance"), [left_expr, right_expr])
-
     return _const(None)
 
 
@@ -703,51 +622,34 @@ def _translate_update(node: Node, cfg: TranslationConfig) -> pyast.expr:
 
 def translate_stmt(node: Node, cfg: TranslationConfig) -> list[pyast.stmt]:
     """Translate a TS statement node to Python ast statement(s)."""
-    t = node.type
+    _STMT_MAP = {
+        "lexical_declaration": _translate_var_decl,
+        "expression_statement": _translate_expr_stmt,
+        "if_statement": lambda n, c: [_translate_if(n, c)],
+        "for_statement": _translate_for,
+        "for_in_statement": _translate_for_in,
+        "return_statement": lambda n, c: [_translate_return(n, c)],
+        "break_statement": lambda n, c: [pyast.Break()],
+        "continue_statement": lambda n, c: [pyast.Continue()],
+        "statement_block": translate_block,
+        "comment": lambda n, c: [],
+    }
+    handler = _STMT_MAP.get(node.type)
+    return handler(node, cfg) if handler else []
 
-    if t == "lexical_declaration":
-        return _translate_var_decl(node, cfg)
 
-    if t == "expression_statement":
-        child = node.children[0] if node.children else None
-        if child:
-            if child.type == "assignment_expression":
-                return _translate_assignment(child, cfg)
-            if child.type == "augmented_assignment_expression":
-                return _translate_aug_assign(child, cfg)
-            if child.type == "update_expression":
-                return _translate_update_stmt(child, cfg)
-            # Expression as statement (e.g., function call)
-            expr = translate_expr(child, cfg)
-            return [pyast.Expr(value=expr)]
+def _translate_expr_stmt(node: Node, cfg: TranslationConfig) -> list[pyast.stmt]:
+    """Handle expression_statement: assignments, augmented assigns, calls."""
+    child = node.children[0] if node.children else None
+    if not child:
         return []
-
-    if t == "if_statement":
-        return [_translate_if(node, cfg)]
-
-    if t == "for_statement":
-        return _translate_for(node, cfg)
-
-    if t == "for_in_statement":
-        return _translate_for_in(node, cfg)
-
-    if t == "return_statement":
-        return [_translate_return(node, cfg)]
-
-    if t == "break_statement":
-        return [pyast.Break()]
-
-    if t == "continue_statement":
-        return [pyast.Continue()]
-
-    if t == "statement_block":
-        return translate_block(node, cfg)
-
-    if t == "comment":
-        # Skip comments
-        return []
-
-    return []
+    if child.type == "assignment_expression":
+        return _translate_assignment(child, cfg)
+    if child.type == "augmented_assignment_expression":
+        return _translate_aug_assign(child, cfg)
+    if child.type == "update_expression":
+        return _translate_update_stmt(child, cfg)
+    return [pyast.Expr(value=translate_expr(child, cfg))]
 
 
 def translate_block(node: Node, cfg: TranslationConfig) -> list[pyast.stmt]:
