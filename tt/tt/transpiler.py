@@ -634,20 +634,32 @@ def _translate_arrow(node: Node, cfg: TranslationConfig) -> pyast.expr:
     if not body:
         return _const(None)
 
-    # Simple lambda: (x) => x.foo
     param_names = []
+    has_destructuring = False
     if params:
         for child in params.children:
-            if child.type in ("identifier", "required_parameter"):
-                pname = get_text(child)
-                if child.type == "required_parameter":
-                    for sc in child.children:
-                        if sc.type == "identifier":
-                            pname = get_text(sc)
-                            break
-                param_names.append(pname)
+            if child.type == "identifier":
+                param_names.append(get_text(child))
+            elif child.type == "required_parameter":
+                # Check if the parameter is a destructuring pattern
+                for sc in child.children:
+                    if sc.type == "object_pattern":
+                        has_destructuring = True
+                        param_names.append("_item")
+                        break
+                    elif sc.type == "identifier":
+                        param_names.append(get_text(sc))
+                        break
+
+    if not param_names:
+        param_names = ["_x"]
 
     body_expr = translate_expr(body, cfg) if body.type != "statement_block" else _const(None)
+
+    # For destructuring params like ({ type }) => ..., use the first destructured
+    # property as direct access on the lambda param
+    if has_destructuring and body_expr is not None:
+        body_expr = _rewrite_destructured_body(body_expr, params)
 
     return pyast.Lambda(
         args=pyast.arguments(
@@ -657,6 +669,47 @@ def _translate_arrow(node: Node, cfg: TranslationConfig) -> pyast.expr:
         ),
         body=body_expr
     )
+
+
+def _rewrite_destructured_body(body: pyast.expr, params: Node) -> pyast.expr:
+    """Rewrite arrow body to access destructured props via dict keys.
+
+    ({ type }) => type === 'BUY'
+    becomes: lambda _item: _item['type'] == 'BUY'
+    """
+    # Extract destructured property names
+    props = []
+    for child in params.children:
+        if child.type == "required_parameter":
+            for sc in child.children:
+                if sc.type == "object_pattern":
+                    for pat in sc.children:
+                        if pat.type == "shorthand_property_identifier_pattern":
+                            props.append(get_text(pat))
+
+    # Walk the body AST and replace Name references to destructured props
+    # with _item['prop'] subscripts
+    if props:
+        body = _SubstituteDestructured(props).visit(body)
+    return body
+
+
+class _SubstituteDestructured(pyast.NodeTransformer):
+    """Replace Name(id=prop) with Subscript(_item, prop) for destructured params."""
+
+    def __init__(self, props: list[str]):
+        self._props = {_snake(p) for p in props}
+        self._raw_props = {_snake(p): p for p in props}
+
+    def visit_Name(self, node: pyast.Name) -> pyast.expr:
+        if node.id in self._props:
+            raw = self._raw_props[node.id]
+            return pyast.Subscript(
+                value=pyast.Name(id="_item", ctx=pyast.Load()),
+                slice=pyast.Constant(value=raw),
+                ctx=node.ctx
+            )
+        return node
 
 
 def _translate_update(node: Node, cfg: TranslationConfig) -> pyast.expr:
