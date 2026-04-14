@@ -210,55 +210,10 @@ def _translate_method_call(func_node: Node, args: list, cfg: TranslationConfig) 
             if method_name == "abs":
                 return _call(_name("abs"), [translate_expr(obj_node, cfg)])
 
-            # .includes(x) -> x in obj
-            if method_name == "includes":
-                return pyast.Compare(
-                    left=args[0] if args else _const(None),
-                    ops=[pyast.In()],
-                    comparators=[translate_expr(obj_node, cfg)]
-                )
-
-            # .filter(fn) -> [x for x in obj if fn(x)]
-            if method_name == "filter":
-                return _call(
-                    _name("list"),
-                    [_call(_name("filter"), [args[0] if args else _const(None),
-                                             translate_expr(obj_node, cfg)])]
-                )
-
-            # .length -> len(obj)
-            if method_name == "length":
-                return _call(_name("len"), [translate_expr(obj_node, cfg)])
-
-            # .push(x) -> obj.append(x)
-            if method_name == "push":
-                return _call(
-                    _attr(translate_expr(obj_node, cfg), "append"),
-                    args
-                )
-
-            # .at(n) -> obj[n]
-            if method_name == "at":
-                return pyast.Subscript(
-                    value=translate_expr(obj_node, cfg),
-                    slice=args[0] if args else _const(0),
-                    ctx=pyast.Load()
-                )
-
-            # .sort / .findIndex / other array methods
-            if method_name == "findIndex":
-                return _call(
-                    _name("next"),
-                    [pyast.GeneratorExp(
-                        elt=_name("_i"),
-                        generators=[pyast.comprehension(
-                            target=pyast.Tuple(elts=[_name("_i"), _name("_x")], ctx=pyast.Store()),
-                            iter=_call(_name("enumerate"), [translate_expr(obj_node, cfg)]),
-                            ifs=[_call(args[0] if args else _name("None"), [_name("_x")])],
-                            is_async=0
-                        )]
-                    )]
-                )
+            # Array/collection methods
+            result = _try_array_method(method_name, obj_node, args, cfg)
+            if result is not None:
+                return result
 
             # Default: obj.method(args)
             return _call(
@@ -266,6 +221,31 @@ def _translate_method_call(func_node: Node, args: list, cfg: TranslationConfig) 
                 args
             )
     return _const(None)
+
+
+def _try_array_method(name: str, obj_node, args: list, cfg) -> pyast.expr | None:
+    """Handle array/collection method calls."""
+    if name == "includes":
+        return pyast.Compare(left=args[0] if args else _const(None),
+            ops=[pyast.In()], comparators=[translate_expr(obj_node, cfg)])
+    if name == "filter":
+        return _call(_name("list"), [_call(_name("filter"),
+            [args[0] if args else _const(None), translate_expr(obj_node, cfg)])])
+    if name == "length":
+        return _call(_name("len"), [translate_expr(obj_node, cfg)])
+    if name == "push":
+        return _call(_attr(translate_expr(obj_node, cfg), "append"), args)
+    if name == "at":
+        return pyast.Subscript(value=translate_expr(obj_node, cfg),
+            slice=args[0] if args else _const(0), ctx=pyast.Load())
+    if name == "findIndex":
+        return _call(_name("next"), [pyast.GeneratorExp(elt=_name("_i"),
+            generators=[pyast.comprehension(
+                target=pyast.Tuple(elts=[_name("_i"), _name("_x")], ctx=pyast.Store()),
+                iter=_call(_name("enumerate"), [translate_expr(obj_node, cfg)]),
+                ifs=[_call(args[0] if args else _name("None"), [_name("_x")])],
+                is_async=0)])])
+    return None
 
 
 def _translate_func_call(func_node, args: list, cfg: TranslationConfig) -> pyast.expr:
