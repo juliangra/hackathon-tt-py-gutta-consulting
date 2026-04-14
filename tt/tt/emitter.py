@@ -204,11 +204,13 @@ def _sm_loop_head(cfg: TranslationConfig, ii: str, lines: list[str]) -> None:
     pos = tuple(t for t, f in cfg.activity_factors.items() if f != 0)
     _upf = cfg.f('up')
 
-    for atype, factor in cfg.activity_factors.items():
-        if factor == 0 and atype != "FEE":
-            target = v(f"total{atype[0] + atype[1:].lower()}")
-            cond = "if" if atype == list(t for t, f in cfg.activity_factors.items() if f == 0 and t != "FEE")[0] else "elif"
-            lines.append(f"{ii}{cond} otype == {atype!r}: {target} += order['quantity'] * order['{_upf}']")
+    # Accumulate non-transactional types (factor==0, excluding fee-only types)
+    accum_types = [(t, v(f"total{t[0] + t[1:].lower()}"))
+                   for t, f in cfg.activity_factors.items()
+                   if f == 0 and t.lower() != "fee"]
+    for idx_at, (atype, target) in enumerate(accum_types):
+        cond = "if" if idx_at == 0 else "elif"
+        lines.append(f"{ii}{cond} otype == {atype!r}: {target} += order['quantity'] * order['{_upf}']")
 
     lines.append(f"{ii}if order.get('itemType') == 'start':")
     lines.append(f"{ii}    if {v('indexOfStartOrder')} == 0 and idx + 1 < len(orders):")
@@ -251,7 +253,7 @@ def _sm_loop_calc(cfg: TranslationConfig, ii: str, lines: list[str]) -> None:
 
 
 def _sm_loop_gross(cfg: TranslationConfig, ii: str, lines: list[str]) -> None:
-    """Gross performance from sells + avg price + reset (inside for loop)."""
+    """Sell P&L + avg price + position reset (inside for loop)."""
     v = cfg.var
     sell_type = [t for t, f in cfg.activity_factors.items() if f < 0][0]
     lines.append(f"{ii}{v('grossPerformanceFromSell')} = D(0)")
