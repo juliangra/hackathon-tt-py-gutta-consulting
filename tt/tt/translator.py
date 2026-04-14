@@ -8,15 +8,23 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tt.config import TranslationConfig
 from tt.emitter import emit_module
 
 
 def run_translation(repo_root: Path, output_dir: Path) -> None:
     """Run the translation process."""
-    ts_source_path = (
-        repo_root / "projects" / "ghostfolio" / "apps" / "api" / "src"
-        / "app" / "portfolio" / "calculator" / "roai" / "portfolio-calculator.ts"
+    # Load project-specific config from JSON (all domain terms live here)
+    config_path = (
+        repo_root / "tt" / "tt" / "scaffold" / "ghostfolio_pytx" / "tt_import_map.json"
     )
+    if not config_path.exists():
+        print(f"Warning: config not found: {config_path}")
+        return
+
+    cfg = TranslationConfig(config_path)
+
+    ts_source_path = repo_root / cfg.source_file
     output_file = (
         output_dir / "app" / "implementation" / "portfolio" / "calculator"
         / "roai" / "portfolio_calculator.py"
@@ -29,8 +37,8 @@ def run_translation(repo_root: Path, output_dir: Path) -> None:
     print(f"Translating {ts_source_path.name}...")
     ts_content = ts_source_path.read_text(encoding="utf-8")
 
-    # Parse TS and emit Python via AST-walking emitter
-    python_lines = emit_module(ts_content)
+    # Parse TS and emit Python via config-driven AST-walking emitter
+    python_lines = emit_module(ts_content, cfg)
 
     if not python_lines:
         print("Warning: emitter produced no output")
