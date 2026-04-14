@@ -411,7 +411,7 @@ class RoaiPortfolioCalculator(PortfolioCalculator):
                 break
 
         total_gross_perf = gross_perf - gross_perf_at_start
-        total_net_perf = total_gross_perf - (fees - fees_at_start) + total_dividend
+        total_net_perf = total_gross_perf - (fees - fees_at_start)
 
         twi_avg = sum_twi / total_inv_days if total_inv_days > 0 else D(0)
         net_perf_pct = total_net_perf / twi_avg if twi_avg > 0 else D(0)
