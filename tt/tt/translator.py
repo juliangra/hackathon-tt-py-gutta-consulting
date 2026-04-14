@@ -90,8 +90,12 @@ D = Decimal
 
 
 def _get_factor(activity_type: str) -> int:
-    """BUY adds units (+1), SELL removes them (-1)."""
-    return 1 if activity_type == "BUY" else -1
+    """BUY adds units (+1), SELL removes them (-1), everything else is 0."""
+    if activity_type == "BUY":
+        return 1
+    elif activity_type == "SELL":
+        return -1
+    return 0
 
 
 def _parse_date(s: str) -> date:
